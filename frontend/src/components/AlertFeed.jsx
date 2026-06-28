@@ -25,13 +25,13 @@ export function AlertFeed({ alerts }) {
           <Bell className="w-4 h-4 text-subtext" />
           <h2 className="font-display font-semibold text-sm text-text">Alert Feed</h2>
         </div>
-        <span className="text-[10px] font-mono text-muted px-2 py-0.5 rounded bg-surface2">
+        <span className="text-[10px] font-mono text-subtext px-2 py-0.5 rounded bg-surface2">
           {alerts.length} active
         </span>
       </div>
 
       {alerts.length === 0 ? (
-        <div className="flex-1 flex flex-col items-center justify-center text-muted gap-2">
+        <div className="flex-1 flex flex-col items-center justify-center text-subtext gap-2">
           <Info className="w-6 h-6 opacity-30" />
           <p className="text-xs">All systems normal</p>
         </div>
@@ -56,7 +56,7 @@ export function AlertFeed({ alerts }) {
                   <p className="text-subtext text-[11px] mt-0.5 leading-snug">
                     {alert.message}
                   </p>
-                  <p className="text-muted text-[10px] mt-1 font-mono">
+                  <p className="text-subtext text-[10px] mt-1 font-mono">
                     {timeAgo(alert.timestamp)}
                   </p>
                 </div>

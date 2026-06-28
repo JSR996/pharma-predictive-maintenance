@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-06-28T00:00:00Z",
+  "title": "Design System: PharmaGuard",
+  "extensions": {
+    "colorMeta": {
+      "bg":       { "role": "neutral", "displayName": "Cleanroom Navy",   "canonical": "#0A0E1A", "tonalRamp": ["#05070D", "#0A0E1A", "#111827", "#1F2937", "#374151", "#4B5563", "#6B7280", "#9CA3AF"] },
+      "surface":  { "role": "neutral", "displayName": "Panel Surface",    "canonical": "#111827", "tonalRamp": ["#0A0E1A", "#111827", "#1F2937", "#374151", "#4B5563", "#6B7280", "#9CA3AF", "#D1D5DB"] },
+      "surface2": { "role": "neutral", "displayName": "Inset Surface",    "canonical": "#1F2937", "tonalRamp": ["#111827", "#1F2937", "#374151", "#4B5563", "#6B7280", "#9CA3AF", "#D1D5DB", "#F9FAFB"] },
+      "border":   { "role": "neutral", "displayName": "Hairline Border",  "canonical": "#374151", "tonalRamp": ["#1F2937", "#374151", "#4B5563", "#6B7280", "#9CA3AF", "#D1D5DB", "#E5E7EB", "#F9FAFB"] },
+      "teal":     { "role": "primary", "displayName": "Live Teal",        "canonical": "#00D4AA", "tonalRamp": ["#003D31", "#005B49", "#007A62", "#00997B", "#00D4AA", "#33DDBB", "#66E6CC", "#99EFDD"] },
+      "warning":  { "role": "secondary", "displayName": "Warning Amber",  "canonical": "#F59E0B", "tonalRamp": ["#4A2F03", "#6E4605", "#925D07", "#C27D09", "#F59E0B", "#F7B13B", "#F9C56B", "#FBD89B"] },
+      "critical": { "role": "secondary", "displayName": "Critical Red",   "canonical": "#EF4444", "tonalRamp": ["#481111", "#6B1A1A", "#8F2222", "#C13434", "#EF4444", "#F26B6B", "#F59292", "#F8B9B9"] },
+      "text":     { "role": "neutral", "displayName": "Primary Text",     "canonical": "#F9FAFB", "tonalRamp": ["#6B7280", "#9CA3AF", "#D1D5DB", "#E5E7EB", "#F3F4F6", "#F9FAFB", "#FCFCFD", "#FFFFFF"] },
+      "subtext":  { "role": "neutral", "displayName": "Subtext",          "canonical": "#9CA3AF", "tonalRamp": ["#374151", "#4B5563", "#6B7280", "#9CA3AF", "#D1D5DB", "#E5E7EB", "#F3F4F6", "#F9FAFB"] },
+      "muted":    { "role": "neutral", "displayName": "Deep Muted",       "canonical": "#6B7280", "tonalRamp": ["#1F2937", "#374151", "#4B5563", "#6B7280", "#9CA3AF", "#D1D5DB", "#E5E7EB", "#F9FAFB"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display",  "purpose": "Space Grotesk 700. Selected-equipment name, KPI counts, wordmark." },
+      "headline": { "displayName": "Headline", "purpose": "Space Grotesk 600. Card names, panel titles." },
+      "body":    { "displayName": "Body",     "purpose": "Inter 400. Alert messages, prose, empty states." },
+      "label":   { "displayName": "Label",    "purpose": "Inter 500, tracked uppercase. Sensor legends, eyebrows, status." },
+      "mono":    { "displayName": "Mono",     "purpose": "JetBrains Mono. All telemetry values, IDs, timestamps." }
+    },
+    "shadows": [
+      { "name": "status-glow-sm", "value": "drop-shadow(0 0 4px rgba(0,212,170,0.53))", "purpose": "Halo on the active RUL arc, in the status color. Makes live data read as lit." },
+      { "name": "status-glow-md", "value": "0 0 8px rgba(0,212,170,0.27)", "purpose": "Glow under the equipment-health bar, in the status color." },
+      { "name": "tooltip-lift",   "value": "0 20px 25px -5px rgba(0,0,0,0.4)", "purpose": "The one true shadow — chart tooltips floating above the plane." }
+    ],
+    "motion": [
+      { "name": "pulse-critical", "value": "opacity 1 -> 0.4 -> 1 over 2s cubic-bezier(0.4,0,0.6,1) infinite", "purpose": "Slow breathe on critical pills only. Gated behind prefers-reduced-motion." },
+      { "name": "transition-state", "value": "200ms ease (border, ring, background)", "purpose": "Default for card hover/selection state changes." },
+      { "name": "transition-bar", "value": "500ms ease (width)", "purpose": "Equipment-health bar settling as RUL updates." }
+    ],
+    "breakpoints": [
+      { "name": "md", "value": "768px" },
+      { "name": "2xl", "value": "1536px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Equipment Card",
+      "kind": "card",
+      "refersTo": "equipment-card",
+      "description": "Primary interactive surface — a status-tinted button holding the RUL gauge and sensor pills.",
+      "html": "<button class=\"ds-equip-card\"><div class=\"ds-equip-head\"><div><p class=\"ds-equip-id\">COMP-01</p><p class=\"ds-equip-name\">Tablet Compression</p></div><svg class=\"ds-equip-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M22 11.08V12a10 10 0 1 1-5.93-9.14\"/><polyline points=\"22 4 12 14.01 9 11.01\"/></svg></div></button>",
+      "css": ".ds-equip-card { display:block; width:100%; text-align:left; background:#111827; border:1px solid rgba(0,212,170,0.2); border-radius:12px; padding:16px; transition:border-color .2s, box-shadow .2s; cursor:pointer; } .ds-equip-card:hover { border-color:rgba(0,212,170,0.4); } .ds-equip-card:focus-visible { outline:none; box-shadow:0 0 0 2px rgba(0,212,170,0.4); } .ds-equip-head { display:flex; align-items:flex-start; justify-content:space-between; } .ds-equip-id { font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:#9CA3AF; margin:0; } .ds-equip-name { font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:14px; color:#F9FAFB; margin:2px 0 0; } .ds-equip-icon { width:16px; height:16px; color:#00D4AA; }"
+    },
+    {
+      "name": "RUL Gauge",
+      "kind": "custom",
+      "refersTo": null,
+      "description": "Signature 220-degree degradation arc: teal healthy, sweeping to amber then red as remaining useful life falls.",
+      "html": "<svg class=\"ds-rul\" width=\"120\" height=\"120\" viewBox=\"0 0 120 120\"><path d=\"M 16.7 79.5 A 45.6 45.6 0 1 1 103.3 79.5\" fill=\"none\" stroke=\"#1F2937\" stroke-width=\"8.4\" stroke-linecap=\"round\"/><path d=\"M 16.7 79.5 A 45.6 45.6 0 0 1 13.6 39.9\" fill=\"none\" stroke=\"#00D4AA\" stroke-width=\"8.4\" stroke-linecap=\"round\" style=\"filter:drop-shadow(0 0 4px rgba(0,212,170,0.53))\"/><text x=\"60\" y=\"56\" text-anchor=\"middle\" dominant-baseline=\"middle\" fill=\"#00D4AA\" font-size=\"21.6\" font-family=\"'Space Grotesk',sans-serif\" font-weight=\"700\">87</text><text x=\"60\" y=\"77\" text-anchor=\"middle\" fill=\"#9CA3AF\" font-size=\"10.8\" font-family=\"Inter,sans-serif\" letter-spacing=\"0.08em\">CYCLES</text></svg>",
+      "css": ".ds-rul { display:block; }"
+    },
+    {
+      "name": "Sensor Tile",
+      "kind": "chip",
+      "refersTo": "sensor-tile",
+      "description": "Inset tile showing one sensor's live mono value and unit.",
+      "html": "<div class=\"ds-sensor\"><p class=\"ds-sensor-label\">Temp</p><p class=\"ds-sensor-val\">72.4<span class=\"ds-sensor-unit\">&deg;C</span></p></div>",
+      "css": ".ds-sensor { background:#1F2937; border-radius:8px; padding:6px 8px; } .ds-sensor-label { font-family:Inter,sans-serif; font-size:9px; text-transform:uppercase; letter-spacing:0.05em; color:#9CA3AF; margin:0; } .ds-sensor-val { font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:500; color:#F9FAFB; margin:2px 0 0; } .ds-sensor-unit { color:#9CA3AF; font-size:9px; margin-left:2px; }"
+    },
+    {
+      "name": "Status Pill (Live)",
+      "kind": "chip",
+      "refersTo": "status-pill",
+      "description": "Fully rounded connection/status pill with leading icon.",
+      "html": "<span class=\"ds-pill\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M5 12.55a11 11 0 0 1 14.08 0\"/><path d=\"M1.42 9a16 16 0 0 1 21.16 0\"/><path d=\"M8.53 16.11a6 6 0 0 1 6.95 0\"/><line x1=\"12\" y1=\"20\" x2=\"12.01\" y2=\"20\"/></svg>Live</span>",
+      "css": ".ds-pill { display:inline-flex; align-items:center; gap:6px; padding:4px 12px; border-radius:9999px; background:rgba(0,212,170,0.1); border:1px solid rgba(0,212,170,0.3); color:#00D4AA; font-family:Inter,sans-serif; font-size:12px; font-weight:500; } .ds-pill svg { width:12px; height:12px; }"
+    },
+    {
+      "name": "Alert Item",
+      "kind": "card",
+      "refersTo": null,
+      "description": "Severity-tinted alert row in the feed, icon plus equipment and message.",
+      "html": "<div class=\"ds-alert\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z\"/><line x1=\"12\" y1=\"9\" x2=\"12\" y2=\"13\"/><line x1=\"12\" y1=\"17\" x2=\"12.01\" y2=\"17\"/></svg><div><p class=\"ds-alert-eq\">Fluid Bed Dryer</p><p class=\"ds-alert-msg\">Vibration trending above nominal band</p><p class=\"ds-alert-time\">12s ago</p></div></div>",
+      "css": ".ds-alert { display:flex; gap:10px; padding:10px; border-radius:8px; background:rgba(245,158,11,0.1); border:1px solid rgba(245,158,11,0.3); } .ds-alert svg { width:14px; height:14px; color:#F59E0B; flex-shrink:0; margin-top:2px; } .ds-alert-eq { font-family:Inter,sans-serif; font-size:12px; font-weight:500; color:#F59E0B; margin:0; } .ds-alert-msg { font-family:Inter,sans-serif; font-size:11px; color:#9CA3AF; margin:2px 0 0; } .ds-alert-time { font-family:'JetBrains Mono',monospace; font-size:10px; color:#9CA3AF; margin:4px 0 0; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Calibrated Instrument",
+    "overview": "PharmaGuard is the screen on a precision lab instrument, not a SaaS dashboard. A near-black navy canvas recedes so illuminated data is the only thing that draws the eye. Teal is the single resting accent meaning healthy and live; the system stays quiet by default and only escalates through amber, red, and a slow critical pulse when a unit actually degrades. The signature element is the RUL degradation arc, an instrument readout, never a fitness ring or a percentage bar.",
+    "keyCharacteristics": [
+      "Near-black navy canvas; data is the only light source.",
+      "One resting accent (teal); color escalates only with real severity.",
+      "Monospace for all numbers — telemetry reads as instrument output.",
+      "The RUL degradation arc is the signature, non-negotiable component.",
+      "Motion is reserved for meaning (the critical pulse), never ambient."
+    ],
+    "rules": [
+      { "name": "The One Accent Rule", "body": "Teal is the only resting color. If a screen under normal operation shows amber or red, that's a signal, not styling. Status escalates teal -> amber -> red and never skips or decorates.", "section": "colors" },
+      { "name": "The Lit-Data Rule", "body": "Color belongs to data, not chrome. Borders, backgrounds, and structure stay neutral navy; saturation is spent only on values, statuses, and the RUL arc.", "section": "colors" },
+      { "name": "The Numbers-Are-Mono Rule", "body": "Any value the model produces or the stream reports is set in JetBrains Mono. Prose is Inter, headings are Space Grotesk, data is mono.", "section": "typography" },
+      { "name": "The Tonal-Layering Rule", "body": "Surfaces are distinguished by tone, not shadow. One level deeper means one step lighter (#0A0E1A -> #111827 -> #1F2937). Glows are for data, shadows for true overlays only.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep the canvas #0A0E1A and let illuminated data be the only light source.",
+      "Do set every telemetry value in JetBrains Mono (IDs, sensor readings, %, timestamps, cycles).",
+      "Do reserve teal for resting/healthy state and escalate teal -> amber -> red only on real severity.",
+      "Do convey depth by tonal layering and use colored glows, not drop shadows, to make active data feel lit.",
+      "Do keep the RUL degradation arc as the signature readout, color-stepped and glowing.",
+      "Do hold body and label text to #9CA3AF or lighter so it clears AA, and pair every status color with an icon or label.",
+      "Do gate the critical pulse and spinners behind prefers-reduced-motion."
+    ],
+    "donts": [
+      "Don't ship the generic SaaS dashboard — no templated card grids, no rounded blue primary buttons, no hero-metric stat tiles.",
+      "Don't drift toward the consumer fitness/IoT app — no playful gradients, no emoji, no gamified rings.",
+      "Don't look like enterprise SCADA / industrial HMI clutter — no gray gradients, no beveled skeuomorphic gauges.",
+      "Don't become a crypto/trading terminal — no neon-on-black hyperactivity, no blinking, no ambient motion.",
+      "Don't use #6B7280 for small body or label text on the navy field — it fails WCAG AA. Use #9CA3AF or lighter.",
+      "Don't use purple/violet (#A78BFA) anywhere — chart and accent colors come from teal / amber / red / cyan only.",
+      "Don't add background-clip:text gradients, glassmorphism as decoration, or border-left accent stripes."
+    ]
+  }
+}

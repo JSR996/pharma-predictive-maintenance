@@ -13,7 +13,7 @@ export function Header({ connected, criticalCount }) {
             <h1 className="font-display font-bold text-base text-text leading-none">
               PharmaGuard
             </h1>
-            <p className="text-[10px] text-muted tracking-widest uppercase mt-0.5">
+            <p className="text-[10px] text-subtext tracking-widest uppercase mt-0.5">
               Predictive Maintenance
             </p>
           </div>
@@ -32,7 +32,7 @@ export function Header({ connected, criticalCount }) {
             className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-medium ${
               connected
                 ? 'bg-teal/10 border-teal/30 text-teal'
-                : 'bg-muted/10 border-border text-muted'
+                : 'bg-muted/10 border-border text-subtext'
             }`}
           >
             {connected ? (

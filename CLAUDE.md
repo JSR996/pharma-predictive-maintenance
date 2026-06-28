@@ -75,7 +75,14 @@ FastAPI router prefixes.
 - Adds rolling mean + std over a 10-cycle window, per `unit` (`WINDOW` must stay in sync with the
   live window in `simulator.py`).
 - `MinMaxScaler` → `RandomForestRegressor(n_estimators=200, max_depth=20, min_samples_split=5)` for
-  RUL; `IsolationForest(contamination=0.05)` for anomaly.
+  RUL.
+- **Anomaly = departure from healthy operation.** `IsolationForest` is trained on the *healthy
+  regime only* (capped-RUL plateau), not all cycles, so it doesn't just re-flag degradation. Its
+  `decision_function` distribution over healthy data is saved in the bundle (`anomaly_ref_scores`,
+  `anomaly_quantile`); at inference `predict_rul` turns a live score into a real percentile against
+  that baseline (no magic sigmoid). `is_anomaly` fires in the bottom `1-anomaly_quantile` tail
+  (default 5%); `anomaly_score` is folded at the healthy median so typical healthy reads ~0 and rises
+  to 1 toward failure.
 - **Split by engine unit** with `GroupShuffleSplit` (15% of units held out), NOT a random row split.
   A row split leaks, because rolling-window features make consecutive cycles of one engine nearly
   identical — that's what inflated the old reported R². Honest eval lands around **RMSE ~17.5,
@@ -103,3 +110,31 @@ COMP-04 Blister Packaging · COMP-05 HVAC Air Handler.
 - **Accent** `#00D4AA` (teal-green) · **Critical** `#EF4444` · **Warning** `#F59E0B` · **Normal** `#00D4AA`
 - **Display font** Space Grotesk · **Body** Inter
 - **Signature element**: RUL gauge rendered as a degradation arc, not a percentage bar.
+
+
+# Append this to the bottom of your existing CLAUDE.md
+
+## Tooling Conventions
+
+### Design — Impeccable
+This project uses the Impeccable skill pack for frontend work.
+- Run `/impeccable critique` on any new component before considering it done
+- Run `/impeccable polish` before committing UI changes
+- The design system is non-negotiable: dark navy (#0A0E1A), teal accent (#00D4AA),
+  Space Grotesk display, Inter body, no purple gradients, no nested cards,
+  no generic dashboard tropes.
+- The RULGauge degradation arc is the signature element — do not replace it
+  with a percentage bar, even if asked to "simplify".
+
+### Testing — Playwright MCP
+This project uses the Playwright MCP server for browser automation.
+- Use `playwright mcp` to self-QA changes against the running dev server
+  (frontend on localhost:5173, backend on localhost:8000)
+- E2E test specs live in `frontend/tests/`
+- Before claiming a UI feature is "done", verify it through Playwright MCP
+- Default to ARIA snapshots over coordinate-based clicks
+
+### Quality bar
+- All new UI must pass `/impeccable critique` with no findings
+- All new flows must have a Playwright spec or at least a self-QA pass
+- Never install a dependency for something a few lines of native code can do

@@ -33,3 +33,17 @@
     50%       { opacity: 0.4; }
   }
 }
+
+/* Respect reduced-motion: hold steady instead of pulsing/spinning. */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .pulse-critical { opacity: 1 !important; }
+  .animate-spin { animation: none !important; }
+}

@@ -29,23 +29,7 @@ export function RULGauge({ rul, cap = 125, size = 120 }) {
     return `M ${s.x} ${s.y} A ${radius} ${radius} 0 ${large} 1 ${e.x} ${e.y}`
   }
 
-  const endDeg = START_DEG + TOTAL_DEG * (1 - pct)
-
-  // Color interpolation: teal (#00D4AA) → warning (#F59E0B) → critical (#EF4444)
-  function getColor(pct) {
-    if (pct > 0.5) {
-      // teal → warning
-      const t = (pct - 0.5) / 0.5
-      const r = Math.round(0 + t * 0)
-      const g = Math.round(212 + t * (158 - 212))
-      const b = Math.round(170 + t * (11 - 170))
-      return `rgb(${239 - Math.round((1-t)*239)},${Math.round(158 + t*(212-158))},${Math.round(11 + t*(170-11))})`
-    }
-    // warning → critical
-    const t = pct / 0.5
-    return pct < 0.2 ? '#EF4444' : pct < 0.4 ? '#F59E0B' : '#00D4AA'
-  }
-
+  // Status step: critical red → warning amber → healthy teal (thresholds mirror predict_rul)
   const color = pct < 0.12 ? '#EF4444' : pct < 0.32 ? '#F59E0B' : '#00D4AA'
   const trackPath  = describeArc(START_DEG, START_DEG + TOTAL_DEG, r)
   const activePath = pct > 0.005 ? describeArc(START_DEG, START_DEG + TOTAL_DEG * pct, r) : null
@@ -90,7 +74,7 @@ export function RULGauge({ rul, cap = 125, size = 120 }) {
           x={cx}
           y={cy + size * 0.14}
           textAnchor="middle"
-          fill="#6B7280"
+          fill="#9CA3AF"
           fontSize={size * 0.09}
           fontFamily="Inter, sans-serif"
           letterSpacing="0.08em"

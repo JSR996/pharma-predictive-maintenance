@@ -9,6 +9,21 @@ from functools import lru_cache
 
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "model.pkl")
 
+# RUL status thresholds — the single definition used by both the ML inference path
+# and the synthetic fallback simulator, so a unit's status means the same thing in
+# either stream mode.
+RUL_CRITICAL = 20
+RUL_WARNING = 50
+
+
+def status_for(rul: float, is_anomaly: bool) -> str:
+    """critical / warning / normal from a RUL value and anomaly flag."""
+    if is_anomaly or rul < RUL_CRITICAL:
+        return "critical"
+    if rul < RUL_WARNING:
+        return "warning"
+    return "normal"
+
 
 @lru_cache(maxsize=1)
 def load_bundle() -> dict:
@@ -38,33 +53,43 @@ def predict_rul(sensor_dict: dict) -> dict:
     rul = float(rf.predict(vec_s)[0])
     rul = max(0.0, min(rul, float(rul_cap)))
 
-    # IsolationForest: predict() gives -1 = anomaly, 1 = normal.
-    # decision_function() is > 0 for normal points and < 0 for anomalies, with the
-    # boundary at 0. Map it through a sigmoid centered on that boundary so normal
-    # points score well below 0.5 and anomalies above it (1 = most anomalous).
-    iso_label = iso.predict(vec_s)[0]
+    # Anomaly = departure from HEALTHY operation, calibrated against the healthy
+    # decision_function distribution stored at train time (higher decision = more
+    # normal). `rank` is the fraction of healthy operation at most as normal as this
+    # reading, so a healthy median point sits at rank≈0.5 and an anomalous point at
+    # rank≈0. No magic constant.
     decision = float(iso.decision_function(vec_s)[0])
-    anomaly_score = float(1.0 / (1.0 + np.exp(decision * 20.0)))
-    is_anomaly = bool(iso_label == -1)
-
-    # Derive status
-    if is_anomaly or rul < 20:
-        status = "critical"
-    elif rul < 50:
-        status = "warning"
+    ref = bundle.get("anomaly_ref_scores")
+    if ref is not None and len(ref):
+        ref = np.asarray(ref)            # healthy decision scores, sorted ascending
+        rank = float(np.searchsorted(ref, decision, side="right")) / len(ref)
+        quantile = float(bundle.get("anomaly_quantile", 0.95))
+        # Flag the lower tail: more anomalous than `quantile` of healthy operation
+        # (exactly a (1-quantile) false-positive rate on healthy data by design).
+        is_anomaly = bool(rank <= (1.0 - quantile))
+        # Display score folded at the healthy median: 0 across the normal half of
+        # healthy operation, rising to 1 at/below the most anomalous healthy reading.
+        anomaly_score = float(min(1.0, max(0.0, 1.0 - 2.0 * rank)))
     else:
-        status = "normal"
+        # Backward-compat fallback for an old bundle without calibration data.
+        anomaly_score = float(1.0 / (1.0 + np.exp(decision * 20.0)))
+        is_anomaly = bool(iso.predict(vec_s)[0] == -1)
 
-    # Confidence: tree agreement (std of predictions)
+    status = status_for(rul, is_anomaly)
+
+    # Ensemble agreement: how tightly the individual trees agree (1 = identical
+    # predictions, 0 = spread of a full RUL cap). This measures model *consensus*,
+    # NOT calibrated predictive uncertainty — do not read it as a probability.
     tree_preds = np.array([t.predict(vec_s)[0] for t in rf.estimators_])
-    confidence = float(1 - np.std(tree_preds) / (rul_cap + 1e-9))
-    confidence = round(max(0.0, min(confidence, 1.0)), 4)
+    ensemble_agreement = float(1 - np.std(tree_preds) / (rul_cap + 1e-9))
+    ensemble_agreement = round(max(0.0, min(ensemble_agreement, 1.0)), 4)
 
     return {
         "rul": round(rul, 1),
         "anomaly_score": round(anomaly_score, 4),
         "is_anomaly": is_anomaly,
-        "confidence": confidence,
+        "ensemble_agreement": ensemble_agreement,
+        "confidence": ensemble_agreement,  # deprecated alias; prefer ensemble_agreement
         "status": status,
     }
 

@@ -19,6 +19,7 @@ the stream loops forever instead of pinning every unit at RUL 0.
 
 import asyncio
 import json
+import logging
 import os
 import random
 import re
@@ -26,8 +27,13 @@ from collections import deque
 from datetime import datetime, timezone
 from typing import Any
 
-import numpy as np
+logger = logging.getLogger("pharmaguard.simulator")
+
 import pandas as pd
+
+# Feature engineering shared with the training path so the live predictions match
+# what the model was evaluated on — see model/features.py.
+from model.features import WINDOW, build_feature_row
 
 EQUIPMENT = [
     {"id": "COMP-01", "name": "Tablet Compression Machine", "unit": 1},
@@ -48,7 +54,6 @@ SENSOR_RANGES = {
 }
 
 RUL_CAP = 125
-WINDOW = 10               # rolling window, must match model/train.py
 ANOMALY_PROB = 0.04       # synthetic fallback only
 
 DATA_PATH = os.path.join(os.path.dirname(__file__), "data", "test_FD001.txt")
@@ -68,6 +73,15 @@ try:
     from model.predict import predict_rul as _predict_rul
 except Exception:
     _predict_rul = None
+
+# Shared status thresholds — same definition the ML path uses, so a unit's status
+# means the same thing in either stream mode. This import has no model dependency.
+from model.predict import status_for
+
+
+def _degradation_pct(rul: float) -> float:
+    """% of life consumed, derived from RUL so it always agrees with the gauge."""
+    return round(100.0 * (1.0 - max(0.0, min(rul, RUL_CAP)) / RUL_CAP), 1)
 
 
 # ── Synthetic fallback simulator ─────────────────────────────────────────────
@@ -129,24 +143,18 @@ class EquipmentSimulator:
         sensors = {k: self._sensor_value(k, is_anomaly) for k in SENSOR_RANGES}
         anomaly_score = round(self.degradation * 0.6 + (0.4 if is_anomaly else 0.0) + random.uniform(0, 0.05), 3)
 
-        if is_anomaly or self.rul < 15:
-            status = "critical"
-        elif self.rul < 40:
-            status = "warning"
-        else:
-            status = "normal"
-
+        rul = round(self.rul, 1)
         return {
             "equipment_id":   self.id,
             "equipment_name": self.name,
             "timestamp":      datetime.now(timezone.utc).isoformat(),
             "sensors":        sensors,
-            "rul_predicted":  round(self.rul, 1),
+            "rul_predicted":  rul,
             "anomaly_score":  min(anomaly_score, 1.0),
             "is_anomaly":     is_anomaly,
-            "status":         status,
+            "status":         status_for(rul, is_anomaly),
             "cycle":          self.cycle,
-            "degradation_pct": round(self.degradation * 100, 1),
+            "degradation_pct": _degradation_pct(rul),
         }
 
 
@@ -176,14 +184,10 @@ class ModelReplaySimulator:
                                    maxlen=WINDOW)
 
     def _build_features(self, row: dict) -> dict:
-        feat = {op: row[op] for op in self.op_cols}
-        for s in self.raw_sensors:
-            feat[s] = row[s]
-            vals = [r[s] for r in self.window]
-            feat[f"{s}_mean{WINDOW}"] = float(np.mean(vals))
-            # pandas rolling .std() uses ddof=1 and yields 0 for a single point
-            feat[f"{s}_std{WINDOW}"] = float(np.std(vals, ddof=1)) if len(vals) > 1 else 0.0
-        return feat
+        # `self.window` is the trailing WINDOW rows including the current cycle
+        # (tick() appends `row` before calling this), matching the training-time
+        # rolling window. Delegates to the shared builder so the two never drift.
+        return build_feature_row(list(self.window), self.raw_sensors, self.op_cols)
 
     def _display_sensors(self, row: dict) -> dict:
         out = {}
@@ -203,8 +207,6 @@ class ModelReplaySimulator:
         self.window.append(row)
 
         pred = _predict_rul(self._build_features(row))
-        total = len(self.rows)
-        degradation_pct = round(100 * self.ptr / total, 1)
 
         return {
             "equipment_id":   self.id,
@@ -216,7 +218,9 @@ class ModelReplaySimulator:
             "is_anomaly":     pred["is_anomaly"],
             "status":         pred["status"],
             "cycle":          self.ptr,
-            "degradation_pct": degradation_pct,
+            # Derived from the model's RUL so the health bar agrees with the gauge,
+            # not from raw position in the replay file.
+            "degradation_pct": _degradation_pct(pred["rul"]),
         }
 
 
@@ -257,11 +261,54 @@ _simulators, MODE = _build_simulators()
 # every connected client. Ticking is decoupled from connections so the simulation
 # advances at one fixed rate regardless of how many browsers are watching.
 _latest_snapshot: list[dict] = []
+# Per-equipment last good reading, so one failing sim doesn't blank the whole feed.
+_last_good: dict[str, dict] = {}
+# Liveness — exposed via /health so a frozen stream is observable.
+_last_tick_ts: str | None = None
+_last_error: str | None = None
+
+
+def get_mode() -> str:
+    """Active stream mode, read live (not a stale import-time snapshot)."""
+    return MODE
+
+
+def get_stream_health() -> dict:
+    """Liveness info for /health: last successful tick and last tick error."""
+    return {
+        "stream_mode": MODE,
+        "last_tick": _last_tick_ts,
+        "last_error": _last_error,
+        "equipment_count": len(_latest_snapshot),
+    }
+
+
+def _tick_all() -> list[dict]:
+    """Advance every simulator once, isolating per-sim failures.
+
+    If a single sim raises, log it and reuse that unit's last good reading rather
+    than dropping the entire snapshot. Updates liveness markers.
+    """
+    global _last_tick_ts, _last_error
+    snap = []
+    for eid, sim in _simulators.items():
+        try:
+            reading = sim.tick()
+            _last_good[eid] = reading
+        except Exception as ex:
+            _last_error = f"{eid}: {ex}"
+            logger.exception("tick failed for %s; reusing last good reading", eid)
+            reading = _last_good.get(eid)
+            if reading is None:
+                continue  # never had a good reading yet — skip this unit
+        snap.append(reading)
+    _last_tick_ts = datetime.now(timezone.utc).isoformat()
+    return snap
 
 
 def _prime_snapshot() -> list[dict]:
     global _latest_snapshot
-    _latest_snapshot = [sim.tick() for sim in _simulators.values()]
+    _latest_snapshot = _tick_all()
     return _latest_snapshot
 
 
@@ -276,26 +323,39 @@ def get_all_equipment_status() -> list[dict]:
         "cycle":          r["cycle"],
         "status":         r["status"],
         "degradation_pct": r["degradation_pct"],
+        "timestamp":      r["timestamp"],
     } for r in snap]
 
 
 async def tick_loop(interval: float = 1.5):
     """Single producer: advances ALL simulators one step every `interval` seconds
     and stores the result in `_latest_snapshot`. Started once at app startup, so the
-    simulation runs at a fixed rate no matter how many WebSocket clients connect."""
+    simulation runs at a fixed rate no matter how many WebSocket clients connect.
+
+    The loop is resilient: per-sim failures are isolated by `_tick_all`, and any
+    unexpected error is logged without killing the producer, so the stream can
+    never silently freeze. Exits cleanly only on cancellation at shutdown."""
     global _latest_snapshot
     while True:
-        _latest_snapshot = [sim.tick() for sim in _simulators.values()]
+        try:
+            _latest_snapshot = _tick_all()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("tick_loop iteration failed; keeping previous snapshot")
         await asyncio.sleep(interval)
 
 
 async def stream_sensors(websocket, interval: float = 1.5):
     """Consumer: broadcasts the latest snapshot to one client. Does NOT tick — it
     only reads the shared state produced by `tick_loop`."""
+    from fastapi import WebSocketDisconnect
     try:
         while True:
             if _latest_snapshot:
                 await websocket.send_text(json.dumps(_latest_snapshot))
             await asyncio.sleep(interval)
+    except (WebSocketDisconnect, asyncio.CancelledError):
+        pass  # Client disconnected / server shutting down — expected.
     except Exception:
-        pass  # Client disconnected
+        logger.exception("stream_sensors failed unexpectedly")

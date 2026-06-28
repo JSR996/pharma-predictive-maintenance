@@ -4,15 +4,24 @@ Run: uvicorn main:app --reload --port 8000
 """
 
 import asyncio
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from routers import equipment, alerts, predict as predict_router
-from simulator import stream_sensors, tick_loop
+from simulator import stream_sensors, tick_loop, get_stream_health
 
 TICK_INTERVAL = 1.5  # seconds between simulation steps
+
+# CORS origins from env (comma-separated), defaulting to the local dev servers.
+_DEFAULT_ORIGINS = "http://localhost:5173,http://localhost:3000"
+CORS_ORIGINS = [
+    o.strip()
+    for o in os.getenv("PHARMAGUARD_CORS_ORIGINS", _DEFAULT_ORIGINS).split(",")
+    if o.strip()
+]
 
 
 @asynccontextmanager
@@ -35,7 +44,7 @@ app = FastAPI(
 # ── CORS ─────────────────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -50,16 +59,16 @@ app.include_router(predict_router.router)
 # ── Health ───────────────────────────────────────────────────────────────────
 @app.get("/health", tags=["system"])
 def health():
-    import os
-    from simulator import MODE
     model_ready = os.path.exists(
         os.path.join(os.path.dirname(__file__), "model", "model.pkl")
     )
+    # Read stream liveness/mode live (not a stale import-time snapshot), so a
+    # frozen producer or a mode change is observable here.
     return {
         "status": "ok",
         "model_loaded": model_ready,
-        "stream_mode": MODE,   # "model" = predictions drive the dashboard
         "version": "1.0.0",
+        **get_stream_health(),   # stream_mode, last_tick, last_error, equipment_count
     }
 
 

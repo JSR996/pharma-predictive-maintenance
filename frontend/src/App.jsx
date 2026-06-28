@@ -18,12 +18,12 @@ export default function App() {
           connected={connected}
         />
       ) : (
-        <div className="flex flex-col items-center justify-center min-h-[80vh] gap-4 text-muted">
+        <div className="flex flex-col items-center justify-center min-h-[80vh] gap-4 text-subtext">
           <div className="w-8 h-8 border-2 border-teal/30 border-t-teal rounded-full animate-spin" />
           <p className="text-sm">
             {connected ? 'Waiting for sensor data…' : 'Connecting to PharmaGuard backend…'}
           </p>
-          <p className="text-xs text-muted/60">
+          <p className="text-xs text-subtext/60">
             Make sure <code className="font-mono bg-surface2 px-1 rounded">uvicorn main:app</code> is running on port 8000
           </p>
         </div>

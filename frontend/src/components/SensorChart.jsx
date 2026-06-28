@@ -6,15 +6,15 @@ import {
 const SENSORS = [
   { key: 'temperature', label: 'Temperature', unit: '°C',   color: '#F59E0B', domain: [40, 100] },
   { key: 'vibration',   label: 'Vibration',   unit: 'mm/s', color: '#EF4444', domain: [0, 3]   },
-  { key: 'pressure',    label: 'Pressure',    unit: 'bar',  color: '#60A5FA', domain: [8, 22]  },
-  { key: 'rpm',         label: 'RPM',         unit: '',     color: '#A78BFA', domain: [2600, 3800] },
+  { key: 'pressure',    label: 'Pressure',    unit: 'bar',  color: '#00D4AA', domain: [8, 22]  },
+  { key: 'rpm',         label: 'RPM',         unit: '',     color: '#66E6CC', domain: [2600, 3800] },
 ]
 
 function CustomTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null
   return (
     <div className="bg-surface border border-border rounded-lg px-3 py-2 text-xs shadow-xl">
-      <p className="text-muted mb-1 font-mono">{label}</p>
+      <p className="text-subtext mb-1 font-mono">{label}</p>
       {payload.map(p => (
         <p key={p.dataKey} style={{ color: p.color }} className="font-medium">
           {p.name}: {p.value?.toFixed(2)}
@@ -42,8 +42,8 @@ export function SensorChart({ sensorKey, historyData, label, unit, color, domain
       <ResponsiveContainer width="100%" height={110}>
         <LineChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#1F2937" vertical={false} />
-          <XAxis dataKey="ts" tick={{ fontSize: 9, fill: '#6B7280' }} interval="preserveStartEnd" />
-          <YAxis domain={domain} tick={{ fontSize: 9, fill: '#6B7280' }} />
+          <XAxis dataKey="ts" tick={{ fontSize: 9, fill: '#9CA3AF' }} interval="preserveStartEnd" />
+          <YAxis domain={domain} tick={{ fontSize: 9, fill: '#9CA3AF' }} />
           <Tooltip content={<CustomTooltip />} />
           <Line
             type="monotone"

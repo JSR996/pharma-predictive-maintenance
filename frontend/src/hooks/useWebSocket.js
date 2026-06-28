@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 
-const WS_URL = 'ws://localhost:8000/ws/sensors'
+const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws/sensors'
 const MAX_HISTORY = 60  // 60 data points per sensor (~90s at 1.5s interval)
 
 export function useWebSocket() {

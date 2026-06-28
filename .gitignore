@@ -1,0 +1,27 @@
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# Trained model artifact (regenerate with backend/model/train.py)
+backend/model/model.pkl
+
+# CMAPSS data (download with scripts/download_data.py)
+backend/data/*.txt
+
+# ── Node / frontend ──────────────────────────────────────────────────────────
+node_modules/
+frontend/dist/
+frontend/test-results/
+frontend/playwright-report/
+
+# ── Env / local config ───────────────────────────────────────────────────────
+.env
+.env.local
+*.local
+
+# ── OS / editor ──────────────────────────────────────────────────────────────
+.DS_Store

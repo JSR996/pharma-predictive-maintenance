@@ -15,22 +15,23 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import GroupShuffleSplit
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
+# Feature engineering is shared with the live inference path (simulator.py) so the
+# two can never drift — see model/features.py.
+from features import (
+    WINDOW, DROP_SENSORS, RAW_COLS, OP_COLS,
+    add_rolling_features, feature_columns,
+)
+
 # ─── Paths ───────────────────────────────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "model.pkl")
 
-COLS = (
-    ["unit", "cycle", "op1", "op2", "op3"]
-    + [f"s{i}" for i in range(1, 22)]
-)
-
-# Sensors with near-zero variance on FD001 — dropped
-DROP_SENSORS = ["s1", "s5", "s6", "s10", "s16", "s18", "s19"]
+COLS = RAW_COLS
 
 RUL_CAP = 125          # Standard CMAPSS cap — degradation only relevant near failure
-WINDOW = 10            # Rolling window for lag features
-CONTAMINATION = 0.05   # ~5% anomaly rate for IsolationForest
+ANOMALY_QUANTILE = 0.95  # flag a reading if it's more anomalous than 95% of healthy operation
+ANOMALY_REF_SAMPLES = 2000  # downsampled calibration reference kept in the bundle
 
 
 # ─── Data Loading ─────────────────────────────────────────────────────────────
@@ -54,26 +55,11 @@ def add_rul(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def add_rolling_features(df: pd.DataFrame, sensor_cols: list) -> pd.DataFrame:
-    grp = df.groupby("unit")
-    for col in sensor_cols:
-        df[f"{col}_mean{WINDOW}"] = grp[col].transform(
-            lambda x: x.rolling(WINDOW, min_periods=1).mean()
-        )
-        df[f"{col}_std{WINDOW}"] = grp[col].transform(
-            lambda x: x.rolling(WINDOW, min_periods=1).std().fillna(0)
-        )
-    return df
-
-
 # ─── Feature Engineering ──────────────────────────────────────────────────────
 def build_features(df: pd.DataFrame) -> tuple[pd.DataFrame, list]:
     sensor_cols = [c for c in df.columns if c.startswith("s")]
-    op_cols = ["op1", "op2", "op3"]
     df = add_rolling_features(df, sensor_cols)
-    feature_cols = op_cols + sensor_cols + [
-        c for c in df.columns if "_mean" in c or "_std" in c
-    ]
+    feature_cols = feature_columns(sensor_cols)
     return df, feature_cols
 
 
@@ -120,14 +106,35 @@ def train():
     print(f"   RMSE: {rmse:.2f} | MAE: {mae:.2f} | R²: {r2:.4f}")
 
     # ── Anomaly Model ────────────────────────────────────────────────────────
-    print("🔍 Training IsolationForest (anomaly detection)...")
+    # Train on the HEALTHY regime only (the capped-RUL plateau = far from failure),
+    # so "anomalous" means "departs from healthy operation" rather than "is a rare
+    # degradation state" — degradation is already captured by the RUL model.
+    print("🔍 Training IsolationForest (anomaly detection, healthy baseline)...")
+    healthy_mask = y_train >= RUL_CAP
+    X_healthy = X_train_s[healthy_mask]
     iso = IsolationForest(
         n_estimators=100,
-        contamination=CONTAMINATION,
+        contamination="auto",   # irrelevant: we calibrate + threshold ourselves
         random_state=42,
         n_jobs=-1,
     )
-    iso.fit(X_train_s)
+    iso.fit(X_healthy)
+
+    # Calibration: the empirical distribution of decision_function over healthy
+    # operation. At inference, a live score becomes the fraction of healthy data at
+    # least as "normal" as it (a real percentile) — no magic sigmoid constant. We
+    # keep a downsampled, sorted copy in the bundle.
+    healthy_scores = np.sort(iso.decision_function(X_healthy))
+    if len(healthy_scores) > ANOMALY_REF_SAMPLES:
+        idx = np.linspace(0, len(healthy_scores) - 1, ANOMALY_REF_SAMPLES).astype(int)
+        anomaly_ref_scores = healthy_scores[idx]
+    else:
+        anomaly_ref_scores = healthy_scores
+    # Decision value below which a reading is flagged (the 5th percentile of healthy
+    # decision scores, since lower decision = more anomalous).
+    anomaly_threshold = float(np.quantile(healthy_scores, 1.0 - ANOMALY_QUANTILE))
+    print(f"   healthy rows: {len(X_healthy)} | "
+          f"flag below decision={anomaly_threshold:.4f} (top {(1-ANOMALY_QUANTILE)*100:.0f}%)")
 
     # ── Feature importance ───────────────────────────────────────────────────
     importances = dict(zip(feature_cols, rf.feature_importances_.tolist()))
@@ -145,6 +152,8 @@ def train():
         "rul_cap": RUL_CAP,
         "metrics": {"rmse": rmse, "mae": mae, "r2": r2},
         "feature_importances": importances,
+        "anomaly_ref_scores": anomaly_ref_scores,
+        "anomaly_quantile": ANOMALY_QUANTILE,
     }
     joblib.dump(bundle, MODEL_PATH)
     print(f"\n✅ Model saved → {MODEL_PATH}")

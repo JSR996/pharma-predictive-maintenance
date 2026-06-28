@@ -30,7 +30,7 @@ export function EquipmentCard({ reading, isSelected, onClick }) {
       {/* Header row */}
       <div className="flex items-start justify-between mb-3">
         <div>
-          <p className="font-mono text-[11px] text-muted tracking-widest uppercase">
+          <p className="font-mono text-[11px] text-subtext tracking-widest uppercase">
             {reading.equipment_id}
           </p>
           <p className="font-display font-semibold text-sm text-text mt-0.5 leading-tight">
@@ -54,10 +54,10 @@ export function EquipmentCard({ reading, isSelected, onClick }) {
           { label: 'RPM',   val: sensors.rpm,          unit: '' },
         ].map(({ label, val, unit }) => (
           <div key={label} className="bg-surface2 rounded-lg px-2 py-1.5">
-            <p className="text-[9px] text-muted uppercase tracking-wider">{label}</p>
+            <p className="text-[9px] text-subtext uppercase tracking-wider">{label}</p>
             <p className="font-mono text-xs text-text font-medium">
               {val != null ? val.toFixed(1) : '—'}
-              <span className="text-muted text-[9px] ml-0.5">{unit}</span>
+              <span className="text-subtext text-[9px] ml-0.5">{unit}</span>
             </p>
           </div>
         ))}
@@ -65,8 +65,9 @@ export function EquipmentCard({ reading, isSelected, onClick }) {
 
       {/* Anomaly badge */}
       {reading.is_anomaly && (
-        <div className="mt-2 px-2 py-1 rounded-md bg-critical/10 border border-critical/30 text-critical text-[10px] font-medium text-center">
-          ⚠ Anomaly detected
+        <div className="mt-2 px-2 py-1 rounded-md bg-critical/10 border border-critical/30 text-critical text-[10px] font-medium flex items-center justify-center gap-1">
+          <AlertTriangle className="w-3 h-3 shrink-0" />
+          Anomaly detected
         </div>
       )}
     </button>
