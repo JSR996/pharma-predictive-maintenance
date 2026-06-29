@@ -56,6 +56,38 @@ SENSOR_RANGES = {
 RUL_CAP = 125
 ANOMALY_PROB = 0.04       # synthetic fallback only
 
+
+def _env_bool(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+# Optional fault/noise injection for MODEL mode. CMAPSS degradation is smooth, so
+# without this the live stream rarely shows sudden spikes. When enabled, each tick
+# may perturb the replayed raw sensor row *before* it reaches the model — so the
+# resulting anomaly_score / is_anomaly are the model's real reaction to the spike,
+# not a faked flag. Controlled at runtime via set_fault_injection() (admin endpoint)
+# or at startup via PHARMAGUARD_FAULT_INJECTION.
+_fault_cfg: dict[str, Any] = {
+    "enabled": _env_bool("PHARMAGUARD_FAULT_INJECTION"),
+    "prob": 0.15,        # chance a given tick is perturbed
+    "magnitude": 0.5,    # noise std as a fraction of each sensor's observed range
+}
+
+
+def set_fault_injection(enabled: bool, prob: float | None = None,
+                        magnitude: float | None = None) -> dict:
+    """Update fault-injection config at runtime; returns the new config."""
+    _fault_cfg["enabled"] = bool(enabled)
+    if prob is not None:
+        _fault_cfg["prob"] = max(0.0, min(float(prob), 1.0))
+    if magnitude is not None:
+        _fault_cfg["magnitude"] = max(0.0, float(magnitude))
+    return get_fault_injection()
+
+
+def get_fault_injection() -> dict:
+    return dict(_fault_cfg)
+
 DATA_PATH = os.path.join(os.path.dirname(__file__), "data", "test_FD001.txt")
 CMAPSS_COLS = ["unit", "cycle", "op1", "op2", "op3"] + [f"s{i}" for i in range(1, 22)]
 
@@ -84,6 +116,21 @@ def _degradation_pct(rul: float) -> float:
     return round(100.0 * (1.0 - max(0.0, min(rul, RUL_CAP)) / RUL_CAP), 1)
 
 
+# A reading must look anomalous for this many consecutive ticks before it escalates
+# a unit to "critical". The calibrated detector fires on ~5% of healthy operation by
+# design, so without debouncing a healthy card flips red for a single tick roughly
+# every 20 ticks ("going red and fixing itself"). The anomaly_score still tracks the
+# raw value; only the status/badge escalation is debounced.
+ANOMALY_PERSIST = 3
+
+
+def _bump_anomaly_streak(streak: int, raw: bool) -> tuple[int, bool]:
+    """Advance a consecutive-anomaly counter. Returns (new_streak, effective_anomaly)
+    where effective_anomaly is True only once the streak reaches ANOMALY_PERSIST."""
+    streak = streak + 1 if raw else 0
+    return streak, streak >= ANOMALY_PERSIST
+
+
 # ── Synthetic fallback simulator ─────────────────────────────────────────────
 class EquipmentSimulator:
     """Hand-tuned degradation curves. Display only — does not use the model."""
@@ -95,12 +142,16 @@ class EquipmentSimulator:
         self.cycle = random.randint(0, 60)
         self.max_cycles = RUL_CAP + random.randint(0, 40)
         self._last_anomaly = False
+        self._failed = False
+        self._anomaly_streak = 0
 
-    def _replace(self) -> None:
-        """Simulate a maintenance swap: failed unit is restored to healthy."""
+    def replace(self) -> None:
+        """Manual maintenance swap: a failed unit is restored to healthy."""
         self.cycle = 0
         self.max_cycles = RUL_CAP + random.randint(0, 40)
         self._last_anomaly = False
+        self._failed = False
+        self._anomaly_streak = 0
 
     @property
     def rul(self) -> float:
@@ -133,15 +184,19 @@ class EquipmentSimulator:
         return round(max(lo * 0.9, min(value, hi * 1.1)), 2)
 
     def tick(self) -> dict[str, Any]:
-        # End-of-life → replace, so the demo loops instead of rotting.
+        # Sticky failure: at end-of-life the unit holds at RUL 0 / critical until a
+        # human calls replace(), instead of auto-resetting.
         if self.cycle >= self.max_cycles:
-            self._replace()
-        self.cycle += 1
-        is_anomaly = random.random() < ANOMALY_PROB or (self.rul < 15 and random.random() < 0.35)
-        self._last_anomaly = is_anomaly
+            self._failed = True
+        if not self._failed:
+            self.cycle += 1
+        raw_anomaly = random.random() < ANOMALY_PROB or (self.rul < 15 and random.random() < 0.35)
+        self._last_anomaly = raw_anomaly
+        # Debounce: a one-off spike shouldn't recolor the card (see _bump_anomaly_streak).
+        self._anomaly_streak, is_anomaly = _bump_anomaly_streak(self._anomaly_streak, raw_anomaly)
 
-        sensors = {k: self._sensor_value(k, is_anomaly) for k in SENSOR_RANGES}
-        anomaly_score = round(self.degradation * 0.6 + (0.4 if is_anomaly else 0.0) + random.uniform(0, 0.05), 3)
+        sensors = {k: self._sensor_value(k, raw_anomaly) for k in SENSOR_RANGES}
+        anomaly_score = round(self.degradation * 0.6 + (0.4 if raw_anomaly else 0.0) + random.uniform(0, 0.05), 3)
 
         rul = round(self.rul, 1)
         return {
@@ -155,6 +210,7 @@ class EquipmentSimulator:
             "status":         status_for(rul, is_anomaly),
             "cycle":          self.cycle,
             "degradation_pct": _degradation_pct(rul),
+            "failed":          self._failed,
         }
 
 
@@ -171,17 +227,31 @@ class ModelReplaySimulator:
         self.op_cols = op_cols          # ['op1','op2','op3']
         self._assign_engine()
 
-    def _assign_engine(self) -> None:
+    def _assign_engine(self, start: str = "random") -> None:
         self.engine_id = random.choice(list(self.bank.keys()))
         self.rows = self.bank[self.engine_id]
-        # Stagger starting points across the whole run so the fleet boots with a
-        # mix of healthy and near-failure units (varied RUL / status on screen).
-        self.ptr = random.randint(0, max(1, len(self.rows) - 1))
-        # Warm-start the rolling window from the cycles just before the start point
-        # so the very first ticks have realistic mean/std features (avoids the model
-        # seeing an out-of-distribution cold start and flagging false anomalies).
-        self.window: deque = deque(self.rows[max(0, self.ptr - WINDOW):self.ptr],
-                                   maxlen=WINDOW)
+        self._at_end = False
+        self._anomaly_streak = 0
+        if start == "healthy":
+            # Manual maintenance swap: start at the very beginning of a fresh engine
+            # run, fully healthy (RUL capped). Empty window → partial-window features
+            # for the first cycles, exactly as training saw cycle 0 (in-distribution).
+            self.ptr = 0
+            self.window: deque = deque(maxlen=WINDOW)
+        else:
+            # Stagger starting points across the whole run so the fleet boots with a
+            # mix of healthy and near-failure units (varied RUL / status on screen).
+            self.ptr = random.randint(0, max(1, len(self.rows) - 1))
+            # Warm-start the rolling window from the cycles just before the start
+            # point so the very first ticks have realistic mean/std features (avoids
+            # the model seeing an out-of-distribution cold start and false anomalies).
+            self.window = deque(self.rows[max(0, self.ptr - WINDOW):self.ptr],
+                                maxlen=WINDOW)
+
+    def replace(self) -> None:
+        """Manual maintenance swap: bring in a fresh, healthy engine and clear the
+        failed/held state."""
+        self._assign_engine(start="healthy")
 
     def _build_features(self, row: dict) -> dict:
         # `self.window` is the trailing WINDOW rows including the current cycle
@@ -199,28 +269,68 @@ class ModelReplaySimulator:
             out[pharma] = round(lo_d + frac * (hi_d - lo_d), 2)
         return out
 
+    def _maybe_inject_fault(self, row: dict) -> dict:
+        """Return a copy of `row` with raw sensors perturbed if fault injection is
+        active. Operates on a copy so the shared replay bank is never mutated."""
+        if not (_fault_cfg["enabled"] and random.random() < _fault_cfg["prob"]):
+            return row
+        out = dict(row)
+        mag = _fault_cfg["magnitude"]
+        for s in self.raw_sensors:
+            mn, mx = self.stats.get(s, (0.0, 1.0))
+            span = (mx - mn) or 1.0
+            out[s] = out[s] + random.gauss(0.0, mag * span)
+        return out
+
     def tick(self) -> dict[str, Any]:
         if self.ptr >= len(self.rows):
-            self._assign_engine()       # engine reached end-of-run → replace
-        row = self.rows[self.ptr]
-        self.ptr += 1
-        self.window.append(row)
+            # Sticky failure: the engine reached end-of-run. Hold on the final cycle
+            # (RUL≈0, critical) until a human calls replace() — do NOT auto-respawn,
+            # advance the pointer, or mutate the window, so the failed reading stays
+            # stable. The operator must perform maintenance to bring it back.
+            self._at_end = True
+            row = self.rows[-1]
+        else:
+            # Copy + optionally perturb before the window/model see it, so any injected
+            # spike flows through the real prediction pipeline (and the displayed chart).
+            row = self._maybe_inject_fault(self.rows[self.ptr])
+            self.ptr += 1
+            self.window.append(row)
 
         pred = _predict_rul(self._build_features(row))
+
+        # Debounce the model's per-tick anomaly flag so a one-off flag doesn't recolor
+        # the card; anomaly_score stays raw. Then derive status from the debounced flag.
+        self._anomaly_streak, is_anomaly = _bump_anomaly_streak(
+            self._anomaly_streak, pred["is_anomaly"])
+        rul = pred["rul"]
+        status = status_for(rul, is_anomaly)
+
+        # A held-failed unit is unambiguously critical: force RUL to 0 so the gauge
+        # reads empty/red and the fleet "critical" count includes it, regardless of
+        # the model's (unreliable, near-cap) prediction at the final cycle.
+        if self._at_end:
+            rul = 0.0
+            is_anomaly = False
+            status = "critical"
 
         return {
             "equipment_id":   self.id,
             "equipment_name": self.name,
             "timestamp":      datetime.now(timezone.utc).isoformat(),
             "sensors":        self._display_sensors(row),
-            "rul_predicted":  pred["rul"],
+            "rul_predicted":  rul,
             "anomaly_score":  pred["anomaly_score"],
-            "is_anomaly":     pred["is_anomaly"],
-            "status":         pred["status"],
+            "is_anomaly":     is_anomaly,
+            "status":         status,
             "cycle":          self.ptr,
-            # Derived from the model's RUL so the health bar agrees with the gauge,
-            # not from raw position in the replay file.
-            "degradation_pct": _degradation_pct(pred["rul"]),
+            # Derived from the (possibly overridden) RUL so the health bar agrees with
+            # the gauge, not from raw position in the replay file.
+            "degradation_pct": _degradation_pct(rul),
+            # True once the engine has run to failure and is awaiting manual
+            # maintenance — distinguishes "dead, needs servicing" from "still running
+            # but critical".
+            "failed":          self._at_end,
         }
 
 
@@ -283,6 +393,27 @@ def get_stream_health() -> dict:
     }
 
 
+def reload_simulators() -> dict:
+    """Hot-reload model.pkl and rebuild the simulators without a process restart.
+
+    Clears the cached model bundle, re-runs mode selection (so a freshly trained
+    model.pkl or newly added/removed data flips MODEL/SYNTH mode), resets stream
+    state, and re-primes a snapshot. Returns the new stream health."""
+    global _simulators, MODE, _latest_snapshot, _last_good, _last_error
+    try:
+        from model.predict import load_bundle
+        load_bundle.cache_clear()       # next predict_rul() reads the new bundle
+    except Exception:  # pragma: no cover - model module always importable here
+        pass
+    _simulators, MODE = _build_simulators()
+    _last_good = {}
+    _last_error = None
+    _latest_snapshot = []
+    _prime_snapshot()
+    logger.info("simulators reloaded — stream_mode=%s", MODE)
+    return get_stream_health()
+
+
 def _tick_all() -> list[dict]:
     """Advance every simulator once, isolating per-sim failures.
 
@@ -323,8 +454,26 @@ def get_all_equipment_status() -> list[dict]:
         "cycle":          r["cycle"],
         "status":         r["status"],
         "degradation_pct": r["degradation_pct"],
+        "failed":         r.get("failed", False),
         "timestamp":      r["timestamp"],
     } for r in snap]
+
+
+def replace_unit(equipment_id: str) -> dict:
+    """Operator maintenance action: swap a unit's engine for a fresh, healthy one.
+
+    Raises KeyError if the id is unknown. Produces a fresh reading immediately and
+    patches it into `_latest_snapshot`/`_last_good` so REST and the next WebSocket
+    broadcast reflect the maintenance right away (≤ one tick)."""
+    global _latest_snapshot
+    sim = _simulators[equipment_id]   # KeyError → 404 at the router
+    sim.replace()
+    reading = sim.tick()
+    _last_good[equipment_id] = reading
+    snap = _latest_snapshot or _prime_snapshot()
+    _latest_snapshot = [reading if r["equipment_id"] == equipment_id else r
+                        for r in snap]
+    return reading
 
 
 async def tick_loop(interval: float = 1.5):

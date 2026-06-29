@@ -22,4 +22,5 @@ export const api = {
   alerts:      (limit = 20) => get(`/alerts/?limit=${limit}`),
   predict:     (payload) => post('/predict/', payload),
   modelInfo:   () => get('/predict/model-info'),
+  replaceEquipment: (id) => post(`/equipment/${id}/replace`, {}),
 }

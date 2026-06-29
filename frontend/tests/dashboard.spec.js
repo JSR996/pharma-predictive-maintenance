@@ -72,6 +72,31 @@ test.describe('PharmaGuard dashboard', () => {
     }
   })
 
+  test('perform maintenance resets a unit to healthy', async ({ page }) => {
+    await expect(page.getByText('Fleet Status')).toBeVisible()
+
+    const card = page.getByRole('button').filter({ hasText: 'COMP-01' }).first()
+    await expect(card).toBeVisible()
+
+    // On a healthy unit the action stays quiet until the card is hovered/focused.
+    await card.hover()
+    const maintain = card.getByRole('button', { name: /Perform Maintenance|Servicing/ })
+    await expect(maintain).toBeVisible()
+
+    const [res] = await Promise.all([
+      page.waitForResponse(
+        (r) => r.url().includes('/equipment/COMP-01/replace') &&
+               r.request().method() === 'POST'
+      ),
+      maintain.click(),
+    ])
+
+    expect(res.ok()).toBeTruthy()
+    const body = await res.json()
+    expect(body.status).toBe('replaced')
+    expect(body.reading.failed).toBe(false)
+  })
+
   for (const vp of [
     { name: 'tablet', width: 768, height: 1024 },
     { name: 'desktop', width: 1440, height: 900 },

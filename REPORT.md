@@ -127,12 +127,17 @@ download_data.py ─► CMAPSS FD001 ─► train.py ─► model.pkl
 | GET | `/health` | status, `model_loaded`, live `stream_mode`, `last_tick`, `last_error`, `equipment_count` |
 | GET | `/equipment/` | all-equipment snapshot |
 | GET | `/equipment/{id}` | single unit (404 if unknown) |
+| POST | `/equipment/{id}/replace` | operator maintenance — reset a unit to a fresh healthy engine (404 if unknown) |
 | GET | `/alerts/?limit=20` | deterministic alerts derived from the live snapshot |
-| POST | `/predict/` | ML RUL + anomaly prediction (503 if model missing) |
+| POST | `/predict/` | ML RUL + anomaly + conformal interval (`rul_low`/`rul_high`/`rul_interval`); 503 if model missing |
 | GET | `/predict/model-info` | metrics + top feature importances |
+| POST | `/admin/reload` | hot-reload `model.pkl` + stream mode without restart |
+| GET/POST | `/admin/fault-injection` | read / toggle live fault injection (MODEL mode) |
 | WS | `/ws/sensors` | live stream, JSON array of all equipment, ~1.5s |
 
-CORS origins are env-configurable (`PHARMAGUARD_CORS_ORIGINS`), default localhost:5173/3000.
+CORS origins are env-configurable (`PHARMAGUARD_CORS_ORIGINS`), default localhost:5173/3000. The
+`/admin/*` endpoints are gated by an optional `PHARMAGUARD_ADMIN_TOKEN` (`X-Admin-Token` header);
+fault injection can also be enabled at startup with `PHARMAGUARD_FAULT_INJECTION`.
 
 ---
 
@@ -158,8 +163,11 @@ CORS origins are env-configurable (`PHARMAGUARD_CORS_ORIGINS`), default localhos
   names (temperature, pressure, …) are a cosmetic mapping; this is not trained on real pharma data.
 - CMAPSS FD001 is a single operating condition / single fault mode; the model would need retraining
   and revalidation on real plant telemetry before any production use.
-- CMAPSS degradation is smooth, so the live stream rarely shows sudden spikes; there is no real-time
-  sensor noise/fault injection in MODEL mode.
+- CMAPSS degradation is smooth, so the *unperturbed* live stream rarely shows sudden spikes. Optional
+  **fault/noise injection** (`POST /admin/fault-injection`, or `PHARMAGUARD_FAULT_INJECTION`) now
+  perturbs the replayed sensor rows *before* the model sees them, so injected spikes flow through the
+  real prediction pipeline and surface as genuine `is_anomaly` flags — but the underlying data is still
+  CMAPSS, not real pharma faults.
 
 **Modeling**
 - RUL is **capped at 125**, so the model does not distinguish "very healthy" assets (everything above
@@ -167,13 +175,15 @@ CORS origins are env-configurable (`PHARMAGUARD_CORS_ORIGINS`), default localhos
 - Anomaly detection is an unsupervised `IsolationForest` baseline (no labeled fault data); it is now
   calibrated and honest but is not a fault classifier and does not identify *which* failure mode.
 - `ensemble_agreement` measures tree consensus, **not** calibrated predictive uncertainty — don't read
-  it as a probability.
+  it as a probability. For real uncertainty, `/predict/` now also returns a **split-conformal interval**
+  (`rul_low`/`rul_high`, ~90% coverage) calibrated on the held-out validation residuals.
 - No temporal/sequence model (e.g. LSTM/Transformer) and no drift monitoring; rolling mean/std is the
   only temporal feature.
 
 **System / operational**
-- **Model & mode are loaded at startup; swapping them requires a restart.** `/health` now reports live
-  state accurately, but there is no hot-reload (deliberately out of scope).
+- **Model & mode can now be hot-reloaded** via `POST /admin/reload` (clears the cached bundle, re-runs
+  mode selection, re-primes the stream) — no process restart needed. The admin endpoints are gated by an
+  optional `PHARMAGUARD_ADMIN_TOKEN` (open by default, matching the local-demo posture).
 - Single-process, in-memory state (`_latest_snapshot`); no persistence, database, or history beyond the
   ~90s the frontend keeps. Not horizontally scalable as-is.
 - No authentication/authorization; CORS-gated and intended for local/demo use.
@@ -182,8 +192,10 @@ CORS origins are env-configurable (`PHARMAGUARD_CORS_ORIGINS`), default localhos
   from the WS stream; the REST endpoint is effectively a parallel (consistent) view, not the UI source.
 
 **Testing**
-- Backend coverage targets the two highest-risk invariants (feature parity, anomaly calibration);
-  routers/streaming logic are exercised mainly via the Playwright e2e suite rather than unit tests.
+- Backend unit coverage spans the ML invariants (feature parity, anomaly calibration, conformal
+  intervals), the REST surface (`/health`, `/equipment`, `/alerts`, `/predict`, `/admin/*`), and the
+  streaming producer (`_tick_all` failure isolation, fault injection). The Playwright e2e suite still
+  covers the rendered dashboard end-to-end.
 
 ---
 
@@ -202,12 +214,15 @@ This codebase was reviewed and 12 flaws were fixed (see
 - **Production readiness** — `.gitignore` + untracked build artifacts; env-based frontend/CORS config;
   `confidence` renamed to `ensemble_agreement` with honest semantics.
 
-**Verification status:** backend `pytest` 4/4 pass; Playwright 7/7 pass; RF metrics stable
-(RMSE ≈ 17.5, R² ≈ 0.82); live stream shows anomaly scores low for healthy units and rising toward
-failure.
+**Verification status:** backend `pytest` 17/17 pass; Playwright 7/7 pass; RF metrics stable
+(RMSE ≈ 17.5, R² ≈ 0.82, conformal ±30 cycles @90%); live stream shows anomaly scores low for healthy
+units and rising toward failure, and fault injection drives genuine model-flagged anomalies.
+
+**Recently closed (this pass):** hot-reload (`/admin/reload`), fault/noise injection
+(`/admin/fault-injection`), calibrated conformal RUL intervals, and unit tests for the routers and
+streaming producer.
 
 ### Suggested next steps
-1. Hot-reload of `model.pkl` / stream mode without a restart (the one remaining "#5" gap).
-2. Validate on real pharma telemetry; revisit RUL cap and add fault-mode classification.
-3. Persistence + alert acknowledge/notify workflow; auth before any non-local deployment.
-4. Add a temporal model and drift monitoring for genuine real-time fault detection.
+1. Validate on real pharma telemetry; revisit RUL cap and add fault-mode classification.
+2. Persistence + alert acknowledge/notify workflow; auth before any non-local deployment.
+3. Add a temporal model and drift monitoring for genuine real-time fault detection.

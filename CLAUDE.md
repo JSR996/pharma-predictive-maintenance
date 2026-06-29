@@ -42,8 +42,11 @@ runs in one of two modes, chosen automatically at import by `_build_simulators()
   window, builds the full feature vector the model expects, and calls `predict_rul()` — so the
   `rul_predicted` / `anomaly_score` / `status` on screen are the model's **actual predictions** on
   real sensor data. The CMAPSS sensors are linearly mapped onto the 5 pharma sensor names
-  (`DISPLAY_MAP`) purely for display. When an engine reaches end-of-run it is "replaced" with a new
-  random engine, so the stream loops forever.
+  (`DISPLAY_MAP`) purely for display. **Sticky failure:** when an engine reaches end-of-run it is
+  *held* at the failed state (RUL≈0, critical) until an operator performs maintenance —
+  `POST /equipment/{id}/replace` (→ `replace_unit` → `sim.replace()`) swaps in a fresh healthy engine.
+  It does not auto-respawn. Each reading carries a `failed` flag distinguishing "dead, awaiting
+  service" from "still running but critical".
 - **SYNTH mode** (fallback — model/data missing): the original `EquipmentSimulator` hand-tuned
   degradation curves, so `uvicorn` still runs before you've trained. `GET /health` reports which
   mode is active via `stream_mode`.
@@ -94,12 +97,27 @@ FastAPI router prefixes.
 | GET | /health | Status, whether model.pkl exists, and active `stream_mode` (model/synth) |
 | GET | /equipment/ | All equipment snapshot from simulators |
 | GET | /equipment/{id} | Single equipment (404 if unknown) |
-| GET | /alerts/?limit=20 | Randomly-generated alerts, sorted by severity |
-| POST | /predict/ | ML RUL prediction (503 if model.pkl missing) |
+| POST | /equipment/{id}/replace | Operator maintenance: reset a unit to a fresh healthy engine (404 if unknown) |
+| GET | /alerts/?limit=20 | Deterministic snapshot-derived alerts, sorted by severity |
+| POST | /predict/ | ML RUL + calibrated conformal interval (`rul_low`/`rul_high`/`rul_interval`); 503 if model.pkl missing |
 | GET | /predict/model-info | Model metrics + top feature importances |
+| POST | /admin/reload | Hot-reload model.pkl + stream mode without restart (clears `load_bundle` cache, rebuilds simulators) |
+| GET/POST | /admin/fault-injection | Read/toggle live fault injection in MODEL mode |
 | WS | /ws/sensors | Live stream, JSON array of all equipment, ~1.5s |
 
-CORS is locked to `localhost:5173` and `localhost:3000`.
+CORS defaults to `localhost:5173` / `localhost:3000` (override via `PHARMAGUARD_CORS_ORIGINS`). The
+`/admin/*` endpoints are gated by an optional `PHARMAGUARD_ADMIN_TOKEN` (`X-Admin-Token` header; open
+when unset). Fault injection can also be enabled at startup via `PHARMAGUARD_FAULT_INJECTION`.
+
+**Conformal intervals:** `train.py` stores `conformal_q` = 90th-percentile absolute residual on the
+group-split val set; `predict_rul` returns `rul ± conformal_q` as a calibrated ~90% interval — real
+predictive uncertainty, distinct from `ensemble_agreement` (tree consensus only). Keep `CONFORMAL_ALPHA`
+(train) and the interval read (predict) in sync.
+
+**Hot-reload & fault injection** live in [backend/simulator.py](backend/simulator.py):
+`reload_simulators()` reassigns module-level `_simulators`/`MODE`; `set_fault_injection()` toggles
+`_fault_cfg`, and `ModelReplaySimulator.tick()` perturbs a **copy** of the replay row (never the shared
+bank) so injected spikes pass through the real model.
 
 ## Equipment (simulated)
 COMP-01 Tablet Compression · COMP-02 Capsule Filling · COMP-03 Fluid Bed Dryer ·

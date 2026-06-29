@@ -32,6 +32,7 @@ COLS = RAW_COLS
 RUL_CAP = 125          # Standard CMAPSS cap — degradation only relevant near failure
 ANOMALY_QUANTILE = 0.95  # flag a reading if it's more anomalous than 95% of healthy operation
 ANOMALY_REF_SAMPLES = 2000  # downsampled calibration reference kept in the bundle
+CONFORMAL_ALPHA = 0.10   # split-conformal miscoverage → 90% RUL prediction intervals
 
 
 # ─── Data Loading ─────────────────────────────────────────────────────────────
@@ -105,6 +106,16 @@ def train():
     r2 = r2_score(y_val, y_pred)
     print(f"   RMSE: {rmse:.2f} | MAE: {mae:.2f} | R²: {r2:.4f}")
 
+    # Split-conformal calibration: the (1-alpha) quantile of absolute residuals on
+    # the held-out (group-split) validation set. At inference, rul ± conformal_q is a
+    # genuinely calibrated ~90% prediction interval — no hand-tuned constant. This is
+    # a real predictive-uncertainty band (unlike `ensemble_agreement`, which only
+    # measures tree consensus).
+    residuals = np.abs(y_val - y_pred)
+    conformal_q = float(np.quantile(residuals, 1.0 - CONFORMAL_ALPHA))
+    print(f"   conformal interval: ±{conformal_q:.1f} cycles "
+          f"({(1-CONFORMAL_ALPHA)*100:.0f}% target coverage)")
+
     # ── Anomaly Model ────────────────────────────────────────────────────────
     # Train on the HEALTHY regime only (the capped-RUL plateau = far from failure),
     # so "anomalous" means "departs from healthy operation" rather than "is a rare
@@ -154,6 +165,8 @@ def train():
         "feature_importances": importances,
         "anomaly_ref_scores": anomaly_ref_scores,
         "anomaly_quantile": ANOMALY_QUANTILE,
+        "conformal_q": conformal_q,
+        "conformal_alpha": CONFORMAL_ALPHA,
     }
     joblib.dump(bundle, MODEL_PATH)
     print(f"\n✅ Model saved → {MODEL_PATH}")

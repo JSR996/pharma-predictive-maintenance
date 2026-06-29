@@ -3,10 +3,21 @@ import { EquipmentCard } from './EquipmentCard'
 import { SensorChartsGrid } from './SensorChart'
 import { AlertFeed } from './AlertFeed'
 import { RULGauge } from './RULGauge'
+import { api } from '../utils/api'
 import clsx from 'clsx'
 
 export function Dashboard({ readings, history, alerts, connected }) {
   const [selectedId, setSelectedId] = useState(null)
+
+  // Operator maintenance action — resets a unit to a fresh, healthy engine. The
+  // WebSocket broadcast refreshes the card on the next tick, so no local state.
+  const handleMaintenance = async (id) => {
+    try {
+      await api.replaceEquipment(id)
+    } catch (e) {
+      console.error('maintenance failed:', e)
+    }
+  }
 
   // Auto-select first critical equipment if nothing selected
   const activeId = selectedId ||
@@ -95,6 +106,7 @@ export function Dashboard({ readings, history, alerts, connected }) {
               reading={r}
               isSelected={r.equipment_id === activeId}
               onClick={() => setSelectedId(r.equipment_id)}
+              onMaintenance={handleMaintenance}
             />
           ))}
         </div>

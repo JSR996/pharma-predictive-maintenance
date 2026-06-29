@@ -6,14 +6,29 @@ Run: uvicorn main:app --reload --port 8000
 import asyncio
 import os
 from contextlib import asynccontextmanager
+from typing import Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from routers import equipment, alerts, predict as predict_router
-from simulator import stream_sensors, tick_loop, get_stream_health
+from simulator import (
+    stream_sensors, tick_loop, get_stream_health,
+    reload_simulators, set_fault_injection, get_fault_injection,
+)
 
 TICK_INTERVAL = 1.5  # seconds between simulation steps
+
+# Optional shared secret for the /admin/* endpoints. If set, callers must send a
+# matching `X-Admin-Token` header; if unset, the endpoints are open (matching the
+# existing CORS-gated, local-demo posture).
+ADMIN_TOKEN = os.getenv("PHARMAGUARD_ADMIN_TOKEN", "").strip()
+
+
+def _require_admin(x_admin_token: Optional[str]) -> None:
+    if ADMIN_TOKEN and x_admin_token != ADMIN_TOKEN:
+        raise HTTPException(status_code=401, detail="invalid or missing admin token")
 
 # CORS origins from env (comma-separated), defaulting to the local dev servers.
 _DEFAULT_ORIGINS = "http://localhost:5173,http://localhost:3000"
@@ -70,6 +85,36 @@ def health():
         "version": "1.0.0",
         **get_stream_health(),   # stream_mode, last_tick, last_error, equipment_count
     }
+
+
+# ── Admin — hot-reload & fault injection (no restart) ────────────────────────
+class FaultInjectionPayload(BaseModel):
+    enabled: bool
+    prob: Optional[float] = None
+    magnitude: Optional[float] = None
+
+
+@app.post("/admin/reload", tags=["system"])
+def admin_reload(x_admin_token: Optional[str] = Header(default=None)):
+    """Reload model.pkl and rebuild simulators without restarting the process."""
+    _require_admin(x_admin_token)
+    return reload_simulators()
+
+
+@app.post("/admin/fault-injection", tags=["system"])
+def admin_fault_injection(
+    payload: FaultInjectionPayload,
+    x_admin_token: Optional[str] = Header(default=None),
+):
+    """Toggle/configure live fault injection in MODEL mode."""
+    _require_admin(x_admin_token)
+    return set_fault_injection(payload.enabled, payload.prob, payload.magnitude)
+
+
+@app.get("/admin/fault-injection", tags=["system"])
+def admin_fault_injection_status(x_admin_token: Optional[str] = Header(default=None)):
+    _require_admin(x_admin_token)
+    return get_fault_injection()
 
 
 # ── WebSocket — live sensor stream ───────────────────────────────────────────

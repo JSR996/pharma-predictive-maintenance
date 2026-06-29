@@ -1,5 +1,6 @@
+import { useState } from 'react'
 import { RULGauge } from './RULGauge'
-import { Activity, AlertTriangle, CheckCircle, XCircle } from 'lucide-react'
+import { Activity, AlertTriangle, CheckCircle, XCircle, Wrench } from 'lucide-react'
 import clsx from 'clsx'
 
 const STATUS_CONFIG = {
@@ -8,23 +9,48 @@ const STATUS_CONFIG = {
   critical: { icon: XCircle,       color: 'text-critical', border: 'border-critical/40', bg: 'bg-critical/5' },
 }
 
-export function EquipmentCard({ reading, isSelected, onClick }) {
+export function EquipmentCard({ reading, isSelected, onClick, onMaintenance }) {
+  const [busy, setBusy] = useState(false)
   if (!reading) return null
 
-  const status  = reading.status || 'normal'
-  const cfg     = STATUS_CONFIG[status] || STATUS_CONFIG.normal
-  const Icon    = cfg.icon
-  const sensors = reading.sensors || {}
+  const status    = reading.status || 'normal'
+  const cfg       = STATUS_CONFIG[status] || STATUS_CONFIG.normal
+  const Icon      = cfg.icon
+  const sensors   = reading.sensors || {}
+  const failed    = reading.failed
+  const isHealthy = status === 'normal'
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      onClick?.()
+    }
+  }
+
+  const handleMaintenance = async (e) => {
+    e.stopPropagation()
+    if (busy) return
+    setBusy(true)
+    try {
+      await onMaintenance?.(reading.equipment_id)
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={handleKeyDown}
       className={clsx(
-        'w-full text-left rounded-xl border p-4 transition-all duration-200',
+        'group w-full text-left rounded-xl border p-4 transition-all duration-200 cursor-pointer',
         'hover:border-teal/40 focus:outline-none focus:ring-2 focus:ring-teal/40',
         cfg.border,
         cfg.bg,
-        isSelected && 'ring-2 ring-teal/60 border-teal/50'
+        isSelected && 'ring-2 ring-teal/60 border-teal/50',
+        failed && 'border-critical/60'
       )}
     >
       {/* Header row */}
@@ -63,13 +89,41 @@ export function EquipmentCard({ reading, isSelected, onClick }) {
         ))}
       </div>
 
-      {/* Anomaly badge */}
-      {reading.is_anomaly && (
+      {/* Failed / anomaly badge */}
+      {failed ? (
+        <div className="mt-2 px-2 py-1 rounded-md bg-critical/10 border border-critical/30 text-critical text-[10px] font-medium flex items-center justify-center gap-1">
+          <XCircle className="w-3 h-3 shrink-0" />
+          Failed — needs maintenance
+        </div>
+      ) : reading.is_anomaly && (
         <div className="mt-2 px-2 py-1 rounded-md bg-critical/10 border border-critical/30 text-critical text-[10px] font-medium flex items-center justify-center gap-1">
           <AlertTriangle className="w-3 h-3 shrink-0" />
           Anomaly detected
         </div>
       )}
-    </button>
+
+      {/* Maintenance action — solid + always shown once degraded; on a healthy unit
+          it stays quiet (calm by default) and reveals on card hover or keyboard focus. */}
+      <button
+        onClick={handleMaintenance}
+        disabled={busy}
+        className={clsx(
+          'mt-2 w-full rounded-lg px-2 py-1.5 text-[11px] font-medium tracking-wide',
+          'flex items-center justify-center gap-1.5 transition-colors duration-150',
+          'focus:outline-none focus:ring-2 focus:ring-teal/50 disabled:opacity-50',
+          failed
+            ? 'bg-teal text-bg hover:bg-teal/90'
+            : 'border border-teal/30 text-teal hover:bg-teal/10',
+          // Healthy: hidden until the card is hovered or anything inside it is focused.
+          isHealthy &&
+            'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto ' +
+            'group-focus-within:opacity-100 group-focus-within:pointer-events-auto ' +
+            'focus-visible:opacity-100 focus-visible:pointer-events-auto'
+        )}
+      >
+        <Wrench className={clsx('w-3 h-3 shrink-0', busy && 'animate-spin')} />
+        {busy ? 'Servicing…' : 'Perform Maintenance'}
+      </button>
+    </div>
   )
 }

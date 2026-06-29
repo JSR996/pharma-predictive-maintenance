@@ -84,7 +84,7 @@ def predict_rul(sensor_dict: dict) -> dict:
     ensemble_agreement = float(1 - np.std(tree_preds) / (rul_cap + 1e-9))
     ensemble_agreement = round(max(0.0, min(ensemble_agreement, 1.0)), 4)
 
-    return {
+    result = {
         "rul": round(rul, 1),
         "anomaly_score": round(anomaly_score, 4),
         "is_anomaly": is_anomaly,
@@ -92,6 +92,19 @@ def predict_rul(sensor_dict: dict) -> dict:
         "confidence": ensemble_agreement,  # deprecated alias; prefer ensemble_agreement
         "status": status,
     }
+
+    # Calibrated split-conformal prediction interval (rul ± q), where q is the
+    # (1-alpha) quantile of validation residuals saved at train time. This is real
+    # predictive uncertainty — read it as "true RUL is within [rul_low, rul_high]
+    # ~(1-alpha) of the time". Omitted for old bundles without calibration data.
+    conformal_q = bundle.get("conformal_q")
+    if conformal_q is not None:
+        cap = float(rul_cap)
+        result["rul_low"] = round(max(0.0, rul - conformal_q), 1)
+        result["rul_high"] = round(min(cap, rul + conformal_q), 1)
+        result["rul_interval"] = round(1.0 - float(bundle.get("conformal_alpha", 0.10)), 2)
+
+    return result
 
 
 def get_feature_importances() -> dict:
