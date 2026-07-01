@@ -23,22 +23,22 @@ PharmaGuard monitors 5 pharma equipment units in real-time, predicting **Remaini
 ┌─────────────────────────────────────────────────────────┐
 │  React Dashboard (Vite + Tailwind + Recharts)           │
 │  - Real-time sensor charts via WebSocket                │
-│  - RUL degradation arc gauges                          │
-│  - Alert feed with severity levels                     │
+│  - RUL degradation arc gauges                           │
+│  - Alert feed with severity levels                      │
 └──────────────────────┬──────────────────────────────────┘
                        │ WS /ws/sensors + REST API
 ┌──────────────────────▼──────────────────────────────────┐
 │  FastAPI Backend                                        │
-│  - WebSocket: live sensor stream (1.5s interval)       │
-│  - REST: /equipment, /alerts, /predict, /health        │
-│  - Sensor Simulator: 5 units w/ degradation curves     │
+│  - WebSocket: live sensor stream (1.5s interval)        │
+│  - REST: /equipment, /alerts, /predict, /health         │
+│  - Sensor Simulator: 5 units w/ degradation curves      │
 └──────────────────────┬──────────────────────────────────┘
                        │
 ┌──────────────────────▼──────────────────────────────────┐
 │  ML Models (scikit-learn)                               │
-│  - RandomForestRegressor → RUL prediction              │
-│  - IsolationForest → anomaly detection                 │
-│  - Trained on NASA CMAPSS FD001                        │
+│  - RandomForestRegressor → RUL prediction               │
+│  - IsolationForest → anomaly detection                  │
+│  - Trained on NASA CMAPSS FD001                         │
 └─────────────────────────────────────────────────────────┘
 ```
 
