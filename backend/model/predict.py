@@ -12,15 +12,20 @@ MODEL_PATH = os.path.join(os.path.dirname(__file__), "model.pkl")
 # RUL status thresholds — the single definition used by both the ML inference path
 # and the synthetic fallback simulator, so a unit's status means the same thing in
 # either stream mode.
-RUL_CRITICAL = 20
 RUL_WARNING = 50
 
 
-def status_for(rul: float, is_anomaly: bool) -> str:
-    """critical / warning / normal from a RUL value and anomaly flag."""
-    if is_anomaly or rul < RUL_CRITICAL:
+def status_for(rul: float, is_anomaly: bool, failed: bool = False) -> str:
+    """critical / warning / normal for a unit.
+
+    CRITICAL is reserved for a machine that has stopped working — either explicitly
+    failed (held at end-of-life awaiting maintenance) or with no remaining life
+    (rul <= 0). A detected anomaly or a low RUL is a WARNING, not critical: it means
+    "inspect soon", not "the machine is down".
+    """
+    if failed or rul <= 0:
         return "critical"
-    if rul < RUL_WARNING:
+    if is_anomaly or rul < RUL_WARNING:
         return "warning"
     return "normal"
 

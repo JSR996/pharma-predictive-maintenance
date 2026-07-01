@@ -19,6 +19,19 @@ from simulator import (
 )
 
 
+def test_status_tiers_critical_only_when_stopped():
+    from model.predict import status_for
+    # CRITICAL is reserved for a stopped/failed machine (or no remaining life).
+    assert status_for(0.0, False, failed=True) == "critical"
+    assert status_for(0.0, False) == "critical"
+    # A detected anomaly on a running unit is a WARNING, not critical.
+    assert status_for(80.0, True) == "warning"
+    # Low-but-nonzero RUL is a warning, not critical.
+    assert status_for(15.0, False) == "warning"
+    # Healthy.
+    assert status_for(100.0, False) == "normal"
+
+
 def test_anomaly_debounce_requires_persistence():
     # A one-off anomalous tick must not escalate.
     streak, eff = _bump_anomaly_streak(0, True)

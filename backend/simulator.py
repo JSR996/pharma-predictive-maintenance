@@ -207,7 +207,7 @@ class EquipmentSimulator:
             "rul_predicted":  rul,
             "anomaly_score":  min(anomaly_score, 1.0),
             "is_anomaly":     is_anomaly,
-            "status":         status_for(rul, is_anomaly),
+            "status":         status_for(rul, is_anomaly, failed=self._failed),
             "cycle":          self.cycle,
             "degradation_pct": _degradation_pct(rul),
             "failed":          self._failed,
@@ -300,19 +300,20 @@ class ModelReplaySimulator:
         pred = _predict_rul(self._build_features(row))
 
         # Debounce the model's per-tick anomaly flag so a one-off flag doesn't recolor
-        # the card; anomaly_score stays raw. Then derive status from the debounced flag.
+        # the card; anomaly_score stays raw. A debounced anomaly is a WARNING, not
+        # critical (see status_for) — critical is reserved for a stopped machine.
         self._anomaly_streak, is_anomaly = _bump_anomaly_streak(
             self._anomaly_streak, pred["is_anomaly"])
         rul = pred["rul"]
-        status = status_for(rul, is_anomaly)
 
-        # A held-failed unit is unambiguously critical: force RUL to 0 so the gauge
-        # reads empty/red and the fleet "critical" count includes it, regardless of
-        # the model's (unreliable, near-cap) prediction at the final cycle.
+        # A held-failed unit has stopped working: force RUL to 0 so the gauge reads
+        # empty and mark it failed so status_for returns critical, regardless of the
+        # model's (unreliable, near-cap) prediction at the final cycle.
         if self._at_end:
             rul = 0.0
             is_anomaly = False
-            status = "critical"
+
+        status = status_for(rul, is_anomaly, failed=self._at_end)
 
         return {
             "equipment_id":   self.id,

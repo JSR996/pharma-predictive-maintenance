@@ -1,6 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws/sensors'
+// Fall back to a relative WS URL derived from the page: same host as the site and
+// wss when served over HTTPS (e.g. a dev tunnel), routed to the backend via the Vite
+// `/ws` proxy. Locally this resolves to ws://localhost:5173/ws/sensors.
+const WS_URL = import.meta.env.VITE_WS_URL ||
+  `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/sensors`
 const MAX_HISTORY = 60  // 60 data points per sensor (~90s at 1.5s interval)
 
 export function useWebSocket() {
