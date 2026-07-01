@@ -28,3 +28,11 @@ frontend/playwright-report/
 
 # Local Claude Code settings (machine-specific)
 .claude/settings.local.json
+
+# Internal tooling / docs — not for the public repo
+.claude/
+.impeccable/
+CLAUDE.md
+DESIGN.md
+PRODUCT.md
+REPORT.md
