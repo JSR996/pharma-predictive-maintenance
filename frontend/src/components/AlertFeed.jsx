@@ -4,7 +4,7 @@ import clsx from 'clsx'
 const SEVERITY_CONFIG = {
   critical: { icon: XCircle,       color: 'text-critical', bg: 'bg-critical/10', border: 'border-critical/30' },
   warning:  { icon: AlertTriangle, color: 'text-warning',  bg: 'bg-warning/10',  border: 'border-warning/30'  },
-  info:     { icon: Info,          color: 'text-teal',     bg: 'bg-teal/10',     border: 'border-teal/20'     },
+  info:     { icon: Info,          color: 'text-brand',    bg: 'bg-brand/10',    border: 'border-brand/20'    },
 }
 
 function timeAgo(iso) {
@@ -19,7 +19,7 @@ export function AlertFeed({ alerts }) {
   const cfg = (severity) => SEVERITY_CONFIG[severity] || SEVERITY_CONFIG.info
 
   return (
-    <div className="bg-surface border border-border rounded-xl p-4 h-full flex flex-col">
+    <div className="bg-surface border border-border rounded-xl p-4 h-full flex flex-col shadow-sm">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <Bell className="w-4 h-4 text-subtext" />

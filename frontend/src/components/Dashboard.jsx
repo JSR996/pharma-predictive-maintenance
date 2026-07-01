@@ -3,19 +3,28 @@ import { EquipmentCard } from './EquipmentCard'
 import { SensorChartsGrid } from './SensorChart'
 import { AlertFeed } from './AlertFeed'
 import { RULGauge } from './RULGauge'
+import { InfoHint } from './InfoHint'
 import { api } from '../utils/api'
+import { useToast } from '../hooks/useToast'
 import clsx from 'clsx'
 
 export function Dashboard({ readings, history, alerts, connected }) {
   const [selectedId, setSelectedId] = useState(null)
+  const toast = useToast()
 
   // Operator maintenance action — resets a unit to a fresh, healthy engine. The
   // WebSocket broadcast refreshes the card on the next tick, so no local state.
+  // Result is surfaced as a toast (never silent); the error is re-thrown so the
+  // card can clear its own busy state.
   const handleMaintenance = async (id) => {
+    const name = readings.find(r => r.equipment_id === id)?.equipment_name || id
     try {
       await api.replaceEquipment(id)
+      toast(`${name} serviced — fresh unit online`, 'success')
     } catch (e) {
       console.error('maintenance failed:', e)
+      toast(`Couldn't service ${name} — ${e?.message || 'request failed'}`, 'error')
+      throw e
     }
   }
 
@@ -34,7 +43,7 @@ export function Dashboard({ readings, history, alerts, connected }) {
   return (
     <main className="mx-auto max-w-screen-2xl px-6 py-6">
       {/* Fleet status — one instrument readout, not three stat tiles */}
-      <div className="mb-6 rounded-xl border border-border bg-surface px-5 py-4">
+      <div className="mb-6 rounded-xl border border-border bg-surface px-5 py-4 shadow-sm">
         <div className="flex items-center justify-between gap-6 flex-wrap">
           {/* Headline: total + worst-case state */}
           <div className="flex items-baseline gap-3">
@@ -58,7 +67,7 @@ export function Dashboard({ readings, history, alerts, connected }) {
           {/* Legend: count per state, dimmed when zero */}
           <div className="flex items-center gap-4">
             {[
-              { label: 'Normal',   count: normalCount,   dot: 'bg-teal',     text: 'text-teal'     },
+              { label: 'Normal',   count: normalCount,   dot: 'bg-normal',   text: 'text-normal'   },
               { label: 'Warning',  count: warningCount,  dot: 'bg-warning',  text: 'text-warning'  },
               { label: 'Critical', count: criticalCount, dot: 'bg-critical', text: 'text-critical' },
             ].map(({ label, count, dot, text }) => (
@@ -71,12 +80,12 @@ export function Dashboard({ readings, history, alerts, connected }) {
           </div>
         </div>
 
-        {/* Segmented health meter — a healthy fleet reads as a full teal bar */}
+        {/* Segmented health meter — a healthy fleet reads as a full green bar */}
         <div className="mt-3 h-1.5 rounded-full overflow-hidden bg-surface2 flex gap-px">
           {[
-            { count: normalCount,   color: '#00D4AA' },
-            { count: warningCount,  color: '#F59E0B' },
-            { count: criticalCount, color: '#EF4444' },
+            { count: normalCount,   color: '#16A34A' },
+            { count: warningCount,  color: '#D97706' },
+            { count: criticalCount, color: '#DC2626' },
           ]
             .filter((s) => s.count > 0)
             .map((s, i) => (
@@ -85,53 +94,63 @@ export function Dashboard({ readings, history, alerts, connected }) {
                 style={{
                   width: `${(s.count / readings.length) * 100}%`,
                   background: s.color,
-                  boxShadow: `0 0 8px ${s.color}66`,
                 }}
               />
             ))}
         </div>
       </div>
 
-      {/* Main grid */}
-      <div className="grid grid-cols-12 gap-4">
+      {/* Main grid — single column on mobile, 3-pane on large screens */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
 
-        {/* Equipment cards — left column */}
-        <div className="col-span-3 space-y-3">
+        {/* Equipment cards — left column. Responsive card grid on small screens,
+            single-column rail on desktop. */}
+        <div className="lg:col-span-3">
           <h2 className="font-display font-semibold text-xs text-subtext uppercase tracking-widest mb-2">
             Equipment ({readings.length})
           </h2>
-          {readings.map(r => (
-            <EquipmentCard
-              key={r.equipment_id}
-              reading={r}
-              isSelected={r.equipment_id === activeId}
-              onClick={() => setSelectedId(r.equipment_id)}
-              onMaintenance={handleMaintenance}
-            />
-          ))}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-1 gap-3">
+            {readings.map(r => (
+              <EquipmentCard
+                key={r.equipment_id}
+                reading={r}
+                isSelected={r.equipment_id === activeId}
+                onClick={() => setSelectedId(r.equipment_id)}
+                onMaintenance={handleMaintenance}
+              />
+            ))}
+          </div>
         </div>
 
         {/* Sensor charts — middle */}
-        <div className="col-span-6 space-y-4">
+        <div className="lg:col-span-6 space-y-4">
           {selectedReading ? (
             <>
-              {/* Selected equipment header */}
-              <div className="flex items-center justify-between">
-                <div>
+              {/* Selected equipment header — stacks on mobile so the name and the
+                  anomaly/gauge readout never collide. */}
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
                   <p className="font-mono text-[10px] text-subtext tracking-widest uppercase">
                     {selectedReading.equipment_id}
                   </p>
-                  <h2 className="font-display font-bold text-lg text-text">
+                  <h2 className="font-display font-bold text-lg text-text truncate">
                     {selectedReading.equipment_name}
                   </h2>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 shrink-0">
                   <div className="text-right">
-                    <p className="text-[10px] text-subtext uppercase tracking-wider">Anomaly Score</p>
+                    <p className="text-[10px] text-subtext uppercase tracking-wider">
+                      Anomaly Score
+                      <InfoHint
+                        align="right"
+                        className="ml-1"
+                        text="How far current sensor readings sit from this unit's healthy baseline. 0% is normal; higher means increasingly abnormal."
+                      />
+                    </p>
                     <p className={clsx(
                       'font-mono font-bold text-lg',
                       selectedReading.anomaly_score > 0.6 ? 'text-critical' :
-                      selectedReading.anomaly_score > 0.3 ? 'text-warning' : 'text-teal'
+                      selectedReading.anomaly_score > 0.3 ? 'text-warning' : 'text-normal'
                     )}>
                       {(selectedReading.anomaly_score * 100).toFixed(1)}%
                     </p>
@@ -144,9 +163,15 @@ export function Dashboard({ readings, history, alerts, connected }) {
               <SensorChartsGrid historyData={selectedHistory} />
 
               {/* Degradation bar */}
-              <div className="bg-surface border border-border rounded-xl p-4">
+              <div className="bg-surface border border-border rounded-xl p-4 shadow-sm">
                 <div className="flex justify-between text-xs text-subtext mb-2">
-                  <span>Equipment Health</span>
+                  <span className="flex items-center">
+                    Equipment Health
+                    <InfoHint
+                      className="ml-1"
+                      text="Based on RUL — Remaining Useful Life, the model's estimate of how many operating cycles this unit has left before it needs maintenance."
+                    />
+                  </span>
                   <span>{(100 - (selectedReading.degradation_pct ?? 0)).toFixed(1)}% remaining</span>
                 </div>
                 <div className="w-full h-2 bg-surface2 rounded-full overflow-hidden">
@@ -154,14 +179,9 @@ export function Dashboard({ readings, history, alerts, connected }) {
                     className="h-full rounded-full transition-all duration-500"
                     style={{
                       width: `${100 - (selectedReading.degradation_pct ?? 0)}%`,
-                      background: selectedReading.status === 'critical' ? '#EF4444'
-                                : selectedReading.status === 'warning'  ? '#F59E0B'
-                                : '#00D4AA',
-                      boxShadow: `0 0 8px ${
-                        selectedReading.status === 'critical' ? '#EF444488'
-                        : selectedReading.status === 'warning' ? '#F59E0B88'
-                        : '#00D4AA44'
-                      }`,
+                      background: selectedReading.status === 'critical' ? '#DC2626'
+                                : selectedReading.status === 'warning'  ? '#D97706'
+                                : '#16A34A',
                     }}
                   />
                 </div>
@@ -179,7 +199,7 @@ export function Dashboard({ readings, history, alerts, connected }) {
         </div>
 
         {/* Alert feed — right column */}
-        <div className="col-span-3 h-full" style={{ minHeight: '600px' }}>
+        <div className="lg:col-span-3 lg:min-h-[600px]">
           <AlertFeed alerts={alerts} />
         </div>
       </div>

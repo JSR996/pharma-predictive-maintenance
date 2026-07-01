@@ -1,16 +1,23 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { RULGauge } from './RULGauge'
-import { Activity, AlertTriangle, CheckCircle, XCircle, Wrench } from 'lucide-react'
+import { AlertTriangle, CheckCircle, XCircle, Wrench, Check, X } from 'lucide-react'
 import clsx from 'clsx'
 
 const STATUS_CONFIG = {
-  normal:   { icon: CheckCircle,   color: 'text-teal',     border: 'border-teal/20',     bg: 'bg-teal/5'     },
+  normal:   { icon: CheckCircle,   color: 'text-normal',   border: 'border-normal/25',   bg: 'bg-normal/5'   },
   warning:  { icon: AlertTriangle, color: 'text-warning',  border: 'border-warning/30',  bg: 'bg-warning/5'  },
   critical: { icon: XCircle,       color: 'text-critical', border: 'border-critical/40', bg: 'bg-critical/5' },
 }
 
 export function EquipmentCard({ reading, isSelected, onClick, onMaintenance }) {
   const [busy, setBusy] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const cancelTimer = useRef(null)
+
+  // Clear the auto-cancel timer on unmount so a serviced/removed card doesn't
+  // fire setState after teardown.
+  useEffect(() => () => clearTimeout(cancelTimer.current), [])
+
   if (!reading) return null
 
   const status    = reading.status || 'normal'
@@ -27,12 +34,32 @@ export function EquipmentCard({ reading, isSelected, onClick, onMaintenance }) {
     }
   }
 
-  const handleMaintenance = async (e) => {
+  // First click arms an inline confirm (no modal); it auto-disarms after 4s so a
+  // stray click never leaves the card in a primed state.
+  const arm = (e) => {
     e.stopPropagation()
     if (busy) return
+    setConfirming(true)
+    clearTimeout(cancelTimer.current)
+    cancelTimer.current = setTimeout(() => setConfirming(false), 4000)
+  }
+
+  const cancel = (e) => {
+    e.stopPropagation()
+    clearTimeout(cancelTimer.current)
+    setConfirming(false)
+  }
+
+  const confirm = async (e) => {
+    e.stopPropagation()
+    if (busy) return
+    clearTimeout(cancelTimer.current)
+    setConfirming(false)
     setBusy(true)
     try {
       await onMaintenance?.(reading.equipment_id)
+    } catch {
+      // Error is surfaced as a toast by the parent; just release the busy state.
     } finally {
       setBusy(false)
     }
@@ -46,10 +73,10 @@ export function EquipmentCard({ reading, isSelected, onClick, onMaintenance }) {
       onKeyDown={handleKeyDown}
       className={clsx(
         'group w-full text-left rounded-xl border p-4 transition-all duration-200 cursor-pointer',
-        'hover:border-teal/40 focus:outline-none focus:ring-2 focus:ring-teal/40',
+        'hover:border-brand/40 focus:outline-none focus:ring-2 focus:ring-brand/40',
         cfg.border,
         cfg.bg,
-        isSelected && 'ring-2 ring-teal/60 border-teal/50',
+        isSelected && 'ring-2 ring-brand/60 border-brand/50',
         failed && 'border-critical/60'
       )}
     >
@@ -103,27 +130,64 @@ export function EquipmentCard({ reading, isSelected, onClick, onMaintenance }) {
       )}
 
       {/* Maintenance action — solid + always shown once degraded; on a healthy unit
-          it stays quiet (calm by default) and reveals on card hover or keyboard focus. */}
-      <button
-        onClick={handleMaintenance}
-        disabled={busy}
+          it stays quiet (calm by default) and reveals on card hover or keyboard focus.
+          First click arms an inline confirm; there is no modal. */}
+      <div
         className={clsx(
-          'mt-2 w-full rounded-lg px-2 py-1.5 text-[11px] font-medium tracking-wide',
-          'flex items-center justify-center gap-1.5 transition-colors duration-150',
-          'focus:outline-none focus:ring-2 focus:ring-teal/50 disabled:opacity-50',
-          failed
-            ? 'bg-teal text-bg hover:bg-teal/90'
-            : 'border border-teal/30 text-teal hover:bg-teal/10',
-          // Healthy: hidden until the card is hovered or anything inside it is focused.
-          isHealthy &&
+          'mt-2',
+          // Healthy: hidden until the card is hovered/focused — but once armed or
+          // servicing, force it visible so the confirm can't vanish on mouse-out.
+          isHealthy && !confirming && !busy &&
             'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto ' +
             'group-focus-within:opacity-100 group-focus-within:pointer-events-auto ' +
             'focus-visible:opacity-100 focus-visible:pointer-events-auto'
         )}
       >
-        <Wrench className={clsx('w-3 h-3 shrink-0', busy && 'animate-spin')} />
-        {busy ? 'Servicing…' : 'Perform Maintenance'}
-      </button>
+        {confirming ? (
+          <div className="flex gap-1.5">
+            <button
+              onClick={confirm}
+              className={clsx(
+                'flex-1 rounded-lg px-2 py-1.5 text-[11px] font-semibold tracking-wide',
+                'flex items-center justify-center gap-1.5 transition-colors duration-150',
+                'bg-brand text-white hover:bg-brand/90',
+                'focus:outline-none focus:ring-2 focus:ring-brand/50'
+              )}
+            >
+              <Check className="w-3 h-3 shrink-0" />
+              Confirm reset
+            </button>
+            <button
+              onClick={cancel}
+              aria-label="Cancel maintenance"
+              className={clsx(
+                'rounded-lg px-2 py-1.5 border border-border text-subtext',
+                'flex items-center justify-center transition-colors duration-150',
+                'hover:bg-surface2 hover:text-text',
+                'focus:outline-none focus:ring-2 focus:ring-brand/40'
+              )}
+            >
+              <X className="w-3.5 h-3.5 shrink-0" />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={arm}
+            disabled={busy}
+            className={clsx(
+              'w-full rounded-lg px-2 py-1.5 text-[11px] font-medium tracking-wide',
+              'flex items-center justify-center gap-1.5 transition-colors duration-150',
+              'focus:outline-none focus:ring-2 focus:ring-brand/50 disabled:opacity-60',
+              failed
+                ? 'bg-brand text-white hover:bg-brand/90'
+                : 'border border-brand/30 text-brand hover:bg-brand/10'
+            )}
+          >
+            <Wrench className={clsx('w-3 h-3 shrink-0', busy && 'animate-spin')} />
+            {busy ? 'Servicing…' : 'Perform Maintenance'}
+          </button>
+        )}
+      </div>
     </div>
   )
 }

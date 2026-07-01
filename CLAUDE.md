@@ -28,8 +28,17 @@ uvicorn main:app --reload --port 8000        # API + WS; docs at /docs
 cd frontend && npm install
 npm run dev                                  # http://localhost:5173
 npm run build                                # production build
+
+# Backend tests (pytest; config in backend/pytest.ini → testpaths=tests, pythonpath=.)
+cd backend && pytest                                       # all 24 tests
+cd backend && pytest tests/test_feature_parity.py          # one file
+cd backend && pytest tests/test_routers.py::test_health    # one test
 ```
-There is no test suite, linter config, or CI in this repo.
+The backend has a pytest suite (`backend/tests/`, 24 tests) guarding specific
+invariants — train/serve feature parity, conformal calibration, anomaly
+calibration, router behavior, and streaming. There is no frontend unit-test
+runner, no linter config, and no CI. Frontend E2E specs live in `frontend/tests/`
+and are exercised ad hoc via the Playwright MCP server (see Tooling Conventions).
 
 ## Architecture — the one thing to understand
 
@@ -75,8 +84,13 @@ FastAPI router prefixes.
 - Drops near-zero-variance sensors `s1,s5,s6,s10,s16,s18,s19`.
 - RUL = `max_cycle - cycle`, **capped at 125** (standard CMAPSS preprocessing — degradation only
   meaningful near failure).
-- Adds rolling mean + std over a 10-cycle window, per `unit` (`WINDOW` must stay in sync with the
-  live window in `simulator.py`).
+- Adds rolling mean + std over a 10-cycle window, per `unit`. **Feature engineering is centralized
+  in [backend/model/features.py](backend/model/features.py)** — the single source of truth for
+  `WINDOW`, `DROP_SENSORS`, and the feature columns. Both the offline path (`add_rolling_features`,
+  used by `train.py`) and the live serving path (`build_feature_row`, used by `simulator.py`) import
+  from it, so the two cannot drift; `tests/test_feature_parity.py` asserts they produce identical
+  vectors cycle-by-cycle (including partial windows at the start of a run). Edit `features.py`, never
+  the two call sites independently.
 - `MinMaxScaler` → `RandomForestRegressor(n_estimators=200, max_depth=20, min_samples_split=5)` for
   RUL.
 - **Anomaly = departure from healthy operation.** `IsolationForest` is trained on the *healthy
@@ -124,13 +138,21 @@ COMP-01 Tablet Compression · COMP-02 Capsule Filling · COMP-03 Fluid Bed Dryer
 COMP-04 Blister Packaging · COMP-05 HVAC Air Handler.
 
 ## Design System
-- **Background** `#0A0E1A` (deep navy cleanroom) · **Surface** `#111827` / `#1F2937`
-- **Accent** `#00D4AA` (teal-green) · **Critical** `#EF4444` · **Warning** `#F59E0B` · **Normal** `#00D4AA`
-- **Display font** Space Grotesk · **Body** Inter
+Clean white-and-blue clinical/pharma theme (light). Tokens live in
+[frontend/tailwind.config.js](frontend/tailwind.config.js); hardcoded SVG/Recharts hex mirrors them.
+- **Background** `#EEF4FB` (blue-tinted cleanroom page) · **Surface** `#FFFFFF` / `#F1F5FB`
+  (inner fill: pills, tracks, badges) · **Border** `#DBE7F3`
+- **Brand accent** `#1D4ED8` (pharma blue — token `brand`; UI/brand only: header, focus rings,
+  selected state, primary buttons, "Live" pill, info alerts)
+- **Status** green/amber/red per clinical convention: **Normal** `#16A34A` · **Warning** `#B45309`
+  (text token; graphics — RUL arc, meter, chart line — use the brighter `#D97706`, which clears the
+  3:1 graphical bar) · **Critical** `#DC2626`. A *healthy fleet reads green, not blue* — brand blue
+  is never a status color. All text tokens meet WCAG AA on white.
+- **Ink** `#12233B` (text) · `#5B7089` (subtext)
+- **Display font** Space Grotesk · **Body** Inter · **Mono** JetBrains Mono
+- **Depth** soft neutral `shadow-sm` on cards — **no neon glows, no glassmorphism**.
 - **Signature element**: RUL gauge rendered as a degradation arc, not a percentage bar.
 
-
-# Append this to the bottom of your existing CLAUDE.md
 
 ## Tooling Conventions
 
@@ -138,9 +160,11 @@ COMP-04 Blister Packaging · COMP-05 HVAC Air Handler.
 This project uses the Impeccable skill pack for frontend work.
 - Run `/impeccable critique` on any new component before considering it done
 - Run `/impeccable polish` before committing UI changes
-- The design system is non-negotiable: dark navy (#0A0E1A), teal accent (#00D4AA),
-  Space Grotesk display, Inter body, no purple gradients, no nested cards,
-  no generic dashboard tropes.
+- The design system is non-negotiable: blue-tinted white (#EEF4FB) page, white cards,
+  brand blue accent (#1D4ED8), green/amber/red status (#16A34A/#D97706/#DC2626),
+  Space Grotesk display, Inter body. No purple, no gradients, no nested cards,
+  no neon glows, no glassmorphism, no generic dashboard tropes. Brand blue is a
+  UI accent only — never a status color (healthy reads green).
 - The RULGauge degradation arc is the signature element — do not replace it
   with a percentage bar, even if asked to "simplify".
 

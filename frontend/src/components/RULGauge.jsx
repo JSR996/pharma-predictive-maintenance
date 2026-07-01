@@ -1,6 +1,6 @@
 /**
  * RUL Gauge — the signature visual element of PharmaGuard.
- * Renders a degradation arc: full teal = healthy, sweeps to critical red.
+ * Renders a degradation arc: full green = healthy, sweeps to critical red.
  */
 export function RULGauge({ rul, cap = 125, size = 120 }) {
   const pct = Math.max(0, Math.min(1, rul / cap))
@@ -29,8 +29,8 @@ export function RULGauge({ rul, cap = 125, size = 120 }) {
     return `M ${s.x} ${s.y} A ${radius} ${radius} 0 ${large} 1 ${e.x} ${e.y}`
   }
 
-  // Status step: critical red → warning amber → healthy teal (thresholds mirror predict_rul)
-  const color = pct < 0.12 ? '#EF4444' : pct < 0.32 ? '#F59E0B' : '#00D4AA'
+  // Status step: critical red → warning amber → healthy green (thresholds mirror predict_rul)
+  const color = pct < 0.12 ? '#DC2626' : pct < 0.32 ? '#D97706' : '#16A34A'
   const trackPath  = describeArc(START_DEG, START_DEG + TOTAL_DEG, r)
   const activePath = pct > 0.005 ? describeArc(START_DEG, START_DEG + TOTAL_DEG * pct, r) : null
 
@@ -41,7 +41,7 @@ export function RULGauge({ rul, cap = 125, size = 120 }) {
         <path
           d={trackPath}
           fill="none"
-          stroke="#1F2937"
+          stroke="#E2E8F0"
           strokeWidth={strokeW}
           strokeLinecap="round"
         />
@@ -53,7 +53,6 @@ export function RULGauge({ rul, cap = 125, size = 120 }) {
             stroke={color}
             strokeWidth={strokeW}
             strokeLinecap="round"
-            style={{ filter: `drop-shadow(0 0 4px ${color}88)` }}
           />
         )}
         {/* RUL number */}
@@ -74,7 +73,7 @@ export function RULGauge({ rul, cap = 125, size = 120 }) {
           x={cx}
           y={cy + size * 0.14}
           textAnchor="middle"
-          fill="#9CA3AF"
+          fill="#5B7089"
           fontSize={size * 0.09}
           fontFamily="Inter, sans-serif"
           letterSpacing="0.08em"

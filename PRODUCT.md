@@ -63,7 +63,7 @@ talking to engineer), never marketing-cheerful.
 ## Accessibility & Inclusion
 
 Best-effort, with a practical floor: aim for WCAG AA contrast on body and status text against the
-dark surfaces, keyboard-reachable interactive elements, and a `prefers-reduced-motion` alternative
-for the critical pulse and any stream animations. No formal audit target, but legibility is
-non-negotiable given the "instrument-grade" promise — the muted-gray-on-dark trap is the one to
-watch.
+white/blue-tinted surfaces, keyboard-reachable interactive elements, and a `prefers-reduced-motion`
+alternative for the critical pulse and any stream animations. No formal audit target, but legibility
+is non-negotiable given the "instrument-grade" promise — the muted-gray-on-tinted-white trap is the
+one to watch (light gray "for elegance" on a near-white page is the biggest readability killer).
